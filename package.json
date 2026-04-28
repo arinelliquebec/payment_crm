@@ -1,0 +1,17 @@
+{
+  "name": "monorepo-arrighi-official",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Monorepo do CRM Arrighi",
+  "packageManager": "pnpm@10.12.1",
+  "scripts": {
+    "dev:frontend": "pnpm --filter arr dev",
+    "build:frontend": "pnpm --filter arr build",
+    "dev:backend": "cd backend && dotnet run",
+    "build:backend": "cd backend && dotnet build"
+  },
+  "workspaces": [
+    "frontend",
+    "backend"
+  ]
+}

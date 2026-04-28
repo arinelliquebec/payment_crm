@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # SQL Server para desenvolvimento
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: crm-arrighi-sqlserver
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=YourStrong@Passw0rd
+      - MSSQL_PID=Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    networks:
+      - crm-network
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: crm-arrighi-backend
+    ports:
+      - "5101:5101"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5101
+      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=CrmArrighi;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=true;MultipleActiveResultSets=true
+    depends_on:
+      - sqlserver
+    networks:
+      - crm-network
+    volumes:
+      - ./backend:/app
+      - /app/bin
+      - /app/obj
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: crm-arrighi-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:5101/api
+      - NEXT_PUBLIC_ENVIRONMENT=development
+    depends_on:
+      - backend
+    networks:
+      - crm-network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+
+networks:
+  crm-network:
+    driver: bridge
+
+volumes:
+  sqlserver_data:

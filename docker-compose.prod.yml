@@ -1,0 +1,60 @@
+version: "3.8"
+
+services:
+  # SQL Server para produção
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: crm-arrighi-sqlserver-prod
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=YourStrong@Passw0rd
+      - MSSQL_PID=Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_prod_data:/var/opt/mssql
+    networks:
+      - crm-network-prod
+    restart: unless-stopped
+
+  # Backend API para produção
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    container_name: crm-arrighi-backend-prod
+    ports:
+      - "5101:5101"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5101
+      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=CrmArrighi;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=true;MultipleActiveResultSets=true
+    depends_on:
+      - sqlserver
+    networks:
+      - crm-network-prod
+    restart: unless-stopped
+
+  # Frontend para produção
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    container_name: crm-arrighi-frontend-prod
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:5101/api
+      - NEXT_PUBLIC_ENVIRONMENT=production
+    depends_on:
+      - backend
+    networks:
+      - crm-network-prod
+    restart: unless-stopped
+
+networks:
+  crm-network-prod:
+    driver: bridge
+
+volumes:
+  sqlserver_prod_data:

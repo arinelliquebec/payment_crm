@@ -1,0 +1,9 @@
+{
+  "buildCommand": "cd frontend && pnpm install --no-frozen-lockfile && pnpm build",
+  "outputDirectory": "frontend/.next",
+  "installCommand": "pnpm install --no-frozen-lockfile",
+  "framework": "nextjs",
+  "env": {
+    "NEXT_PUBLIC_API_URL": "https://arrighi-bk-bzfmgxavaxbyh5ej.brazilsouth-01.azurewebsites.net/api"
+  }
+}

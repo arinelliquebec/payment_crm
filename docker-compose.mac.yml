@@ -1,0 +1,81 @@
+version: "3.8"
+
+services:
+  # SQL Server para macOS (compatível com Apple Silicon)
+  sqlserver:
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    container_name: crm-arrighi-sqlserver-mac
+    environment:
+      - ACCEPT_EULA=1
+      - SA_PASSWORD=YourStrong@Passw0rd
+      - MSSQL_PID=Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    networks:
+      - crm-network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong@Passw0rd -Q 'SELECT 1'",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: crm-arrighi-backend-mac
+    ports:
+      - "5101:5101"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5101
+      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=CrmArrighi;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=true;MultipleActiveResultSets=true
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    networks:
+      - crm-network
+    volumes:
+      - ./backend:/app
+      - /app/bin
+      - /app/obj
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5101/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: crm-arrighi-frontend-mac
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:5101/api
+      - NEXT_PUBLIC_ENVIRONMENT=development
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - crm-network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+
+networks:
+  crm-network:
+    driver: bridge
+
+volumes:
+  sqlserver_data:

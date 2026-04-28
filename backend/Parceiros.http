@@ -1,0 +1,48 @@
+### Teste das APIs de Parceiros
+
+### 1. Listar todos os parceiros
+GET {{baseUrl}}/api/Parceiro
+Content-Type: application/json
+
+### 2. Buscar parceiro por ID
+GET {{baseUrl}}/api/Parceiro/1
+Content-Type: application/json
+
+### 3. Buscar parceiros por filial
+GET {{baseUrl}}/api/Parceiro/por-filial/1
+Content-Type: application/json
+
+### 4. Buscar parceiro por pessoa física
+GET {{baseUrl}}/api/Parceiro/por-pessoa-fisica/1
+Content-Type: application/json
+
+### 5. Criar novo parceiro
+POST {{baseUrl}}/api/Parceiro
+Content-Type: application/json
+
+{
+  "pessoaFisicaId": 1,
+  "filialId": 1,
+  "oab": "123456/SP"
+}
+
+### 6. Atualizar parceiro
+PUT {{baseUrl}}/api/Parceiro/1
+Content-Type: application/json
+
+{
+  "id": 1,
+  "filialId": 2,
+  "oab": "654321/SP"
+}
+
+### 7. Excluir parceiro (soft delete)
+DELETE {{baseUrl}}/api/Parceiro/1
+Content-Type: application/json
+
+### 8. Listar responsáveis técnicos
+GET {{baseUrl}}/api/Parceiro/responsaveis-tecnicos
+Content-Type: application/json
+
+### Variáveis de ambiente
+@baseUrl = https://localhost:7001
