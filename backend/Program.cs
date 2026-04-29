@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.HttpOverrides;
 using CrmArrighi.Middleware;
 using Npgsql;
 
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -47,7 +49,7 @@ builder.Services.AddCors(options =>
         builder =>
         {
             builder.WithOrigins(
-                    
+                    "https://payment-crm-frontend.vercel.app/",
                     "http://localhost:3000",
                     "http://localhost:3001"
                 )
