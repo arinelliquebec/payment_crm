@@ -11,6 +11,7 @@ using System.Threading.RateLimiting;
 using Microsoft.ApplicationInsights;
 using Microsoft.ApplicationInsights.Extensibility;
 using CrmArrighi.HealthChecks;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -136,8 +137,9 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 });
 
 // Add Entity Framework
+var databaseConnectionString = GetPostgreSqlConnectionString(builder.Configuration);
 builder.Services.AddDbContext<CrmArrighiContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(databaseConnectionString));
 
 // Register HttpClient
 builder.Services.AddHttpClient();
@@ -221,11 +223,11 @@ Console.WriteLine("🧠 RAG Services registrados (IntentAnalyzer, ContextRetriev
 // 🏥 Health Checks - Monitoramento de Saúde
 // ============================================================================
 builder.Services.AddHealthChecks()
-    .AddCheck<SqlServerHealthCheck>("sql_server", tags: new[] { "critical", "database" })
+    .AddCheck<PostgreSqlHealthCheck>("postgresql", tags: new[] { "critical", "database" })
     .AddCheck<SantanderApiHealthCheck>("santander_api", tags: new[] { "external", "payments" })
     .AddCheck<AzureStorageHealthCheck>("azure_storage", tags: new[] { "external", "storage" });
 
-Console.WriteLine("🏥 Health Checks configurados: SQL Server, Santander API, Azure Storage");
+Console.WriteLine("🏥 Health Checks configurados: PostgreSQL, Santander API, Azure Storage");
 
 // Add CORS
 builder.Services.AddCors(options =>
@@ -391,20 +393,29 @@ using (var scope = app.Services.CreateScope())
     var context = scope.ServiceProvider.GetRequiredService<CrmArrighiContext>();
     var seedDataService = scope.ServiceProvider.GetRequiredService<ISeedDataService>();
 
-    // Criar tabelas de Grupos de Acesso primeiro
-    await CrmArrighi.Helpers.CreateGruposAcessoTableHelper.CreateGruposAcessoTablesIfNotExists(context);
+    // Os helpers legados usam SQL Server puro. No PostgreSQL, as tabelas devem
+    // existir via migração/seed próprios para evitar executar sintaxe [dbo].
+    if (context.Database.IsSqlServer())
+    {
+        // Criar tabelas de Grupos de Acesso primeiro
+        await CrmArrighi.Helpers.CreateGruposAcessoTableHelper.CreateGruposAcessoTablesIfNotExists(context);
 
-    // Criar tabela de Parceiros
-    await CreateTableHelper.CreateParceirosTableIfNotExists(context);
+        // Criar tabela de Parceiros
+        await CreateTableHelper.CreateParceirosTableIfNotExists(context);
 
-    // Criar tabela de Sessões Ativas
-    await CreateTableHelper.CreateSessoesAtivasTableIfNotExists(context);
+        // Criar tabela de Sessões Ativas
+        await CreateTableHelper.CreateSessoesAtivasTableIfNotExists(context);
 
-    // Criar tabela de Histórico de Clientes
-    await CreateTableHelper.CreateHistoricoClientesTableIfNotExists(context);
+        // Criar tabela de Histórico de Clientes
+        await CreateTableHelper.CreateHistoricoClientesTableIfNotExists(context);
 
-    // Criar tabela de Documentos do Portal
-    await CreateTableHelper.CreateDocumentosPortalTableIfNotExists(context);
+        // Criar tabela de Documentos do Portal
+        await CreateTableHelper.CreateDocumentosPortalTableIfNotExists(context);
+    }
+    else
+    {
+        Console.WriteLine("🐘 PostgreSQL ativo: pulando helpers legados de SQL Server.");
+    }
 
     // Fazer seed dos dados
     await seedDataService.SeedAllAsync();
@@ -420,3 +431,40 @@ using (var scope = app.Services.CreateScope())
 // app.UseRateLimiter();
 
 app.Run();
+
+static string GetPostgreSqlConnectionString(IConfiguration configuration)
+{
+    var configuredConnectionString = configuration.GetConnectionString("DefaultConnection");
+    if (!string.IsNullOrWhiteSpace(configuredConnectionString) &&
+        !configuredConnectionString.Contains("Server=", StringComparison.OrdinalIgnoreCase) &&
+        !configuredConnectionString.Contains("Data Source=", StringComparison.OrdinalIgnoreCase))
+    {
+        return configuredConnectionString;
+    }
+
+    var host = configuration["PGHOST"];
+    var user = configuration["PGUSER"];
+    var database = configuration["PGDATABASE"];
+    var password = configuration["PGPASSWORD"];
+
+    if (string.IsNullOrWhiteSpace(host) ||
+        string.IsNullOrWhiteSpace(user) ||
+        string.IsNullOrWhiteSpace(database))
+    {
+        throw new InvalidOperationException(
+            "Configure PGHOST, PGUSER e PGDATABASE para conectar ao PostgreSQL.");
+    }
+
+    var builder = new NpgsqlConnectionStringBuilder
+    {
+        Host = host,
+        Port = int.TryParse(configuration["PGPORT"], out var port) ? port : 5432,
+        Database = database,
+        Username = user,
+        Password = password,
+        SslMode = SslMode.Require,
+        Pooling = true
+    };
+
+    return builder.ConnectionString;
+}

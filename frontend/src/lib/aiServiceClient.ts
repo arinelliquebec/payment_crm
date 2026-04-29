@@ -1,8 +1,10 @@
 // src/lib/aiServiceClient.ts
 import logger from "./logger";
+import { getApiUrl } from "../../env.config";
 
-// URL do AI Service - em desenvolvimento usa localhost, em produção usa Azure
-const AI_SERVICE_URL = process.env.NEXT_PUBLIC_AI_SERVICE_URL || "http://localhost:8000";
+// Usa o BFF/backend existente por padrão. Se houver um AI Service dedicado,
+// defina NEXT_PUBLIC_AI_SERVICE_URL para sobrescrever.
+const AI_SERVICE_URL = process.env.NEXT_PUBLIC_AI_SERVICE_URL || getApiUrl();
 const AI_SERVICE_API_KEY = process.env.NEXT_PUBLIC_AI_SERVICE_KEY || "sua-chave-secreta-aqui";
 
 export interface AIApiResponse<T = any> {
@@ -29,6 +31,7 @@ class AIServiceClient {
 
     try {
       const config: RequestInit = {
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "X-AI-Service-Key": this.apiKey,
@@ -74,47 +77,47 @@ class AIServiceClient {
 
   // Previsão para o próximo mês
   async getPrevisaoProximoMes() {
-    return this.get<PrevisaoMesSeguinte>("/api/ai/previsao-mes-seguinte");
+    return this.get<PrevisaoMesSeguinte>("/Forecast/resumo");
   }
 
   // Tendência geral
   async getTendenciaGeral() {
-    return this.get<TendenciaGeral>("/api/ai/tendencia-geral");
+    return this.get<TendenciaGeral>("/Forecast/resumo");
   }
 
   // Histórico mensal
   async getHistoricoMensal(meses: number = 6) {
-    return this.get<HistoricoMensalResponse>(`/api/ai/historico-mensal?meses=${meses}`);
+    return this.get<HistoricoMensalResponse>(`/Forecast/mensal?meses=${meses}`);
   }
 
   // Previsão de faturamento completa
   async getPrevisaoFaturamento(mesesFuturos: number = 3) {
-    return this.get<PrevisaoFaturamentoResponse>(`/api/ai/previsao-faturamento?meses_futuros=${mesesFuturos}`);
+    return this.get<PrevisaoFaturamentoResponse>(`/Forecast/mensal?meses=${mesesFuturos}`);
   }
 
   // Risco de um cliente específico
   async getRiscoCliente(clienteId: number) {
-    return this.get<ClienteRisco>(`/api/ai/risco-cliente/${clienteId}`);
+    return this.get<ClienteRisco>(`/AnaliseRisco/cliente/${clienteId}`);
   }
 
   // Clientes em alerta
   async getClientesAlerta(limite: number = 10) {
-    return this.get<ClientesAlertaResponse>(`/api/ai/clientes-alerta?limite=${limite}`);
+    return this.get<ClientesAlertaResponse>(`/AnaliseRisco/clientes?limite=${limite}`);
   }
 
   // Resumo de risco
   async getResumoRisco() {
-    return this.get<ResumoRisco>("/api/ai/resumo-risco");
+    return this.get<ResumoRisco>("/AnaliseRisco/resumo");
   }
 
   // Análise de pagamentos de um cliente
   async getAnalisePagamentos(clienteId: number) {
-    return this.get<AnalisePagamentos>(`/api/ai/analise-pagamentos/${clienteId}`);
+    return this.get<AnalisePagamentos>(`/AnaliseRisco/cliente/${clienteId}`);
   }
 
   // Health check
   async healthCheck() {
-    return this.get<HealthCheck>("/health");
+    return this.get<HealthCheck>("/Info/filiais");
   }
 }
 

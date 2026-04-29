@@ -1,20 +1,19 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Microsoft.Data.SqlClient;
+using Npgsql;
 
 namespace CrmArrighi.HealthChecks;
 
 /// <summary>
-/// Health Check para SQL Server com verificações detalhadas
+/// Health Check para PostgreSQL com verificações detalhadas
 /// </summary>
-public class SqlServerHealthCheck : IHealthCheck
+public class PostgreSqlHealthCheck : IHealthCheck
 {
     private readonly string _connectionString;
-    private readonly ILogger<SqlServerHealthCheck> _logger;
+    private readonly ILogger<PostgreSqlHealthCheck> _logger;
 
-    public SqlServerHealthCheck(IConfiguration configuration, ILogger<SqlServerHealthCheck> logger)
+    public PostgreSqlHealthCheck(IConfiguration configuration, ILogger<PostgreSqlHealthCheck> logger)
     {
-        _connectionString = configuration.GetConnectionString("DefaultConnection")
-            ?? throw new ArgumentNullException("ConnectionString:DefaultConnection não configurada");
+        _connectionString = BuildConnectionString(configuration);
         _logger = logger;
     }
 
@@ -27,7 +26,7 @@ public class SqlServerHealthCheck : IHealthCheck
             var data = new Dictionary<string, object>();
             var startTime = DateTime.UtcNow;
 
-            await using var connection = new SqlConnection(_connectionString);
+            await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken);
 
             // Verificar conexão básica
@@ -39,24 +38,24 @@ public class SqlServerHealthCheck : IHealthCheck
             data.Add("ConnectionTimeMs", connectionTime);
 
             // Obter informações do servidor
-            command.CommandText = "SELECT @@VERSION";
+            command.CommandText = "SELECT version()";
             var version = await command.ExecuteScalarAsync(cancellationToken);
             data.Add("ServerVersion", version?.ToString()?.Split('\n')[0] ?? "Unknown");
 
             // Verificar database atual
-            command.CommandText = "SELECT DB_NAME()";
+            command.CommandText = "SELECT current_database()";
             var dbName = await command.ExecuteScalarAsync(cancellationToken);
             data.Add("DatabaseName", dbName?.ToString() ?? "Unknown");
 
             // Verificar se tabela principal existe (teste de integridade)
-            command.CommandText = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'Usuarios'";
+            command.CommandText = "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'Usuarios'";
             var tableExists = await command.ExecuteScalarAsync(cancellationToken);
             data.Add("MainTableExists", Convert.ToInt32(tableExists) > 0);
 
             // Verificar contagem de usuários (query simples)
             try
             {
-                command.CommandText = "SELECT COUNT(*) FROM Usuarios";
+                command.CommandText = "SELECT COUNT(*) FROM \"Usuarios\"";
                 var userCount = await command.ExecuteScalarAsync(cancellationToken);
                 data.Add("UserCount", userCount ?? 0);
             }
@@ -65,39 +64,75 @@ public class SqlServerHealthCheck : IHealthCheck
                 data.Add("UserCount", "N/A");
             }
 
-            _logger.LogDebug("SQL Server health check passed in {Time}ms", connectionTime);
+            _logger.LogDebug("PostgreSQL health check passed in {Time}ms", connectionTime);
 
             // Avaliar se está degradado (conexão lenta)
             if (connectionTime > 1000)
             {
                 return HealthCheckResult.Degraded(
-                    description: $"SQL Server respondendo lentamente ({connectionTime:F0}ms)",
+                    description: $"PostgreSQL respondendo lentamente ({connectionTime:F0}ms)",
                     data: data);
             }
 
             return HealthCheckResult.Healthy(
-                description: "SQL Server operacional",
+                description: "PostgreSQL operacional",
                 data: data);
         }
-        catch (SqlException ex)
+        catch (PostgresException ex)
         {
-            _logger.LogError(ex, "SQL Server health check failed");
+            _logger.LogError(ex, "PostgreSQL health check failed");
             return HealthCheckResult.Unhealthy(
-                description: $"SQL Server não disponível: {ex.Message}",
+                description: $"PostgreSQL não disponível: {ex.Message}",
                 exception: ex,
                 data: new Dictionary<string, object>
                 {
-                    { "ErrorNumber", ex.Number },
-                    { "ErrorState", ex.State }
+                    { "SqlState", ex.SqlState },
+                    { "Severity", ex.Severity }
                 });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "SQL Server health check failed with unexpected error");
+            _logger.LogError(ex, "PostgreSQL health check failed with unexpected error");
             return HealthCheckResult.Unhealthy(
                 description: $"Erro inesperado: {ex.Message}",
                 exception: ex);
         }
+    }
+
+    private static string BuildConnectionString(IConfiguration configuration)
+    {
+        var configuredConnectionString = configuration.GetConnectionString("DefaultConnection");
+        if (!string.IsNullOrWhiteSpace(configuredConnectionString) &&
+            !configuredConnectionString.Contains("Server=", StringComparison.OrdinalIgnoreCase) &&
+            !configuredConnectionString.Contains("Data Source=", StringComparison.OrdinalIgnoreCase))
+        {
+            return configuredConnectionString;
+        }
+
+        var host = configuration["PGHOST"];
+        var user = configuration["PGUSER"];
+        var database = configuration["PGDATABASE"];
+        var password = configuration["PGPASSWORD"];
+
+        if (string.IsNullOrWhiteSpace(host) ||
+            string.IsNullOrWhiteSpace(user) ||
+            string.IsNullOrWhiteSpace(database))
+        {
+            throw new ArgumentNullException("PGHOST/PGUSER/PGDATABASE", "Variáveis PostgreSQL não configuradas");
+        }
+
+        var builder = new NpgsqlConnectionStringBuilder
+        {
+            Host = host,
+            Port = int.TryParse(configuration["PGPORT"], out var port) ? port : 5432,
+            Database = database,
+            Username = user,
+            Password = password,
+            SslMode = SslMode.Require,
+            Pooling = true
+        };
+
+        return builder.ConnectionString;
     }
 }
 

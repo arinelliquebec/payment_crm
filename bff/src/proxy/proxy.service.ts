@@ -23,6 +23,18 @@ const HOP_BY_HOP_HEADERS = new Set([
   'content-length',
 ]);
 
+function shouldSkipResponseHeader(headerName: string): boolean {
+  const normalized = headerName.toLowerCase();
+
+  // O backend .NET ainda usa CORS permissivo (Access-Control-Allow-Origin: *).
+  // Com cookies (`credentials: include`), o browser exige origin explícita.
+  // Por isso o BFF não deve repassar CORS upstream; o NestJS define esses headers.
+  return (
+    HOP_BY_HOP_HEADERS.has(normalized) ||
+    normalized.startsWith('access-control-')
+  );
+}
+
 @Injectable()
 export class ProxyService {
   private readonly logger = new Logger(ProxyService.name);
@@ -94,7 +106,7 @@ export class ProxyService {
     res.status(axiosRes.status);
 
     for (const [key, value] of Object.entries(axiosRes.headers)) {
-      if (!HOP_BY_HOP_HEADERS.has(key.toLowerCase())) {
+      if (!shouldSkipResponseHeader(key)) {
         res.setHeader(key, value as string);
       }
     }
