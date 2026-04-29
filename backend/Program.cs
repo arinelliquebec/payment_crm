@@ -1,3 +1,5 @@
+using Azure.Core;
+using Azure.Identity;
 using Microsoft.EntityFrameworkCore;
 using CrmArrighi.Data;
 using System.Text.Json;
@@ -7,6 +9,8 @@ using CrmArrighi.Middleware;
 using Npgsql;
 
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
+const string PostgreSqlAadScope = "https://ossrdbms-aad.database.windows.net/.default";
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,8 +35,10 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 
 // Add Entity Framework
 var databaseConnectionString = GetDatabaseConnectionString(builder.Configuration);
-builder.Services.AddDbContext<CrmArrighiContext>(options =>
-    options.UseNpgsql(databaseConnectionString));
+var databaseDataSource = CreateNpgsqlDataSource(databaseConnectionString);
+builder.Services.AddSingleton(databaseDataSource);
+builder.Services.AddDbContext<CrmArrighiContext>((serviceProvider, options) =>
+    options.UseNpgsql(serviceProvider.GetRequiredService<NpgsqlDataSource>()));
 
 // Add CORS
 builder.Services.AddCors(options =>
@@ -105,11 +111,10 @@ static string GetDatabaseConnectionString(IConfiguration configuration)
 
     if (string.IsNullOrWhiteSpace(host) ||
         string.IsNullOrWhiteSpace(user) ||
-        string.IsNullOrWhiteSpace(database) ||
-        string.IsNullOrWhiteSpace(password))
+        string.IsNullOrWhiteSpace(database))
     {
         throw new InvalidOperationException(
-            "Configure ConnectionStrings__DefaultConnection or PGHOST, PGUSER, PGDATABASE and PGPASSWORD.");
+            "Configure ConnectionStrings__DefaultConnection or PGHOST, PGUSER and PGDATABASE.");
     }
 
     var builder = new NpgsqlConnectionStringBuilder
@@ -118,10 +123,37 @@ static string GetDatabaseConnectionString(IConfiguration configuration)
         Port = int.TryParse(configuration["PGPORT"], out var port) ? port : 5432,
         Database = database,
         Username = user,
-        Password = password,
         SslMode = SslMode.Require,
         Pooling = true
     };
 
+    if (!string.IsNullOrWhiteSpace(password))
+    {
+        builder.Password = password;
+    }
+
     return builder.ConnectionString;
+}
+
+static NpgsqlDataSource CreateNpgsqlDataSource(string connectionString)
+{
+    var connectionStringBuilder = new NpgsqlConnectionStringBuilder(connectionString);
+    var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionStringBuilder.ConnectionString);
+
+    if (string.IsNullOrWhiteSpace(connectionStringBuilder.Password))
+    {
+        var credential = new DefaultAzureCredential();
+        var tokenRequestContext = new TokenRequestContext([PostgreSqlAadScope]);
+
+        dataSourceBuilder.UsePeriodicPasswordProvider(
+            async (_, cancellationToken) =>
+            {
+                var token = await credential.GetTokenAsync(tokenRequestContext, cancellationToken);
+                return token.Token;
+            },
+            TimeSpan.FromMinutes(55),
+            TimeSpan.FromSeconds(5));
+    }
+
+    return dataSourceBuilder.Build();
 }
