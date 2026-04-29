@@ -2,6 +2,7 @@
 import { getApiUrl, isDevelopment } from "../../env.config";
 import logger from "./logger";
 
+// O BFF autentica via cookie httpOnly; não há necessidade de ler token do localStorage.
 const API_BASE_URL = getApiUrl();
 
 export interface ApiResponse<T = any> {
@@ -32,59 +33,18 @@ class ApiClient {
     const url = `${this.baseUrl}${endpoint}`;
 
     try {
-      // Verificar se há token de autenticação ou usuário logado
-      const token =
-        typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const isAuthenticated =
-        typeof window !== "undefined"
-          ? localStorage.getItem("isAuthenticated") === "true"
-          : false;
-      const user =
-        typeof window !== "undefined" ? localStorage.getItem("user") : null;
-
-      // Tentar obter ID do usuário
-      let usuarioId = null;
-      if (user) {
-        try {
-          const userData = JSON.parse(user);
-          // Tentar diferentes propriedades possíveis para o ID do usuário
-          usuarioId =
-            userData.UsuarioId ||
-            userData.usuarioId ||
-            userData.id ||
-            userData.Id ||
-            userData.userId;
-        } catch (e) {
-          logger.warn("Erro ao fazer parse do usuário:", e);
-        }
-      }
-
-      // Log para debug em desenvolvimento
-      if (isDevelopment()) {
-        logger.log("🔧 ApiClient: Dados do usuário:", {
-          user,
-          usuarioId,
-          isAuthenticated,
-        });
-      }
-
       const config: RequestInit = {
+        credentials: "include", // envia cookie httpOnly bff_session ao BFF
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
-          ...(token && { Authorization: `Bearer ${token}` }),
-          // Só enviar X-Usuario-Id se tivermos um ID válido
-          ...(usuarioId && { "X-Usuario-Id": usuarioId.toString() }),
           ...options.headers,
         },
         ...options,
       };
 
-      // Log apenas em desenvolvimento
       if (isDevelopment()) {
-        logger.log(`🌐 Making request to: ${url}`);
-        logger.log(`🌐 Request method: ${options.method || "GET"}`);
-        logger.log(`🌐 Request headers:`, config.headers);
+        logger.log(`🌐 ${options.method || "GET"} ${url}`);
       }
 
       // Timeout desabilitado por solicitação
@@ -339,33 +299,12 @@ class ApiClient {
     const url = `${this.baseUrl}${endpoint}`;
 
     try {
-      const token =
-        typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const user =
-        typeof window !== "undefined" ? localStorage.getItem("user") : null;
-
-      let usuarioId = null;
-      if (user) {
-        try {
-          const userData = JSON.parse(user);
-          usuarioId =
-            userData.UsuarioId ||
-            userData.usuarioId ||
-            userData.id ||
-            userData.Id ||
-            userData.userId;
-        } catch (e) {
-          logger.warn("Erro ao fazer parse do usuário:", e);
-        }
-      }
-
       const response = await fetch(url, {
         method: "POST",
+        credentials: "include", // cookie httpOnly bff_session
         headers: {
           "Content-Type": "application/json",
           Accept: "text/event-stream",
-          ...(token && { Authorization: `Bearer ${token}` }),
-          ...(usuarioId && { "X-Usuario-Id": usuarioId.toString() }),
         },
         body: JSON.stringify(data),
       });

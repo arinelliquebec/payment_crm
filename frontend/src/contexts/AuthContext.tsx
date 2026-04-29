@@ -10,11 +10,38 @@ import {
   ReactNode,
 } from "react";
 import { apiClient } from "@/lib/api";
+import { getBffUrl } from "../../env.config";
 import { useRouter } from "next/navigation";
 import { UsuarioPermissoes } from "@/types/permissions";
 import { permissionService } from "@/services/permission.service";
 import { userService } from "@/services/user.service";
 import { useAuthCheck } from "@/hooks/useAuthCheck";
+
+// Faz chamadas diretas ao BFF (auth/login, auth/logout, auth/me)
+// sem passar pelo apiClient (que aponta para /api/*)
+async function bffFetch<T>(
+  path: string,
+  options: RequestInit = {}
+): Promise<{ data?: T; error?: string; status: number }> {
+  const url = `${getBffUrl()}${path}`;
+  try {
+    const res = await fetch(url, {
+      ...options,
+      credentials: "include",
+      headers: { "Content-Type": "application/json", ...options.headers },
+    });
+    const text = await res.text();
+    const data = text ? (JSON.parse(text) as T) : undefined;
+    if (!res.ok) {
+      const msg =
+        (data as any)?.message ?? text ?? `Erro ${res.status}`;
+      return { error: msg, status: res.status };
+    }
+    return { data, status: res.status };
+  } catch (err: any) {
+    return { error: err.message ?? "Erro de rede", status: 0 };
+  }
+}
 
 interface User {
   id: number; // Normalizado de usuarioId
@@ -172,78 +199,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkAuth = async () => {
     try {
-      const storedUser = localStorage.getItem("user");
-      const isAuth = localStorage.getItem("isAuthenticated");
+      // Verifica a sessão perguntando ao BFF (lê o cookie httpOnly)
+      const { data, error } = await bffFetch<User>("/auth/me");
 
-      if (storedUser && isAuth === "true") {
-        const userData = JSON.parse(storedUser);
+      if (error || !data) {
+        // Cookie inexistente ou expirado — limpar estado local
+        setUser(null);
+        localStorage.removeItem("user");
+        localStorage.removeItem("isAuthenticated");
+        return;
+      }
 
-        // Verificar se os dados do usuário estão consistentes
-        if (!userData.usuarioId || !userData.grupoAcesso) {
-          console.warn(
-            "Dados do usuário inconsistentes no localStorage, fazendo logout"
-          );
-          logout();
-          return;
-        }
+      const normalizedUser = { ...data, id: data.id ?? (data as any).usuarioId };
+      setUser(normalizedUser);
+      localStorage.setItem("user", JSON.stringify(normalizedUser));
+      localStorage.setItem("isAuthenticated", "true");
 
-        // Normalizar: garantir que id esteja definido (pode vir como usuarioId do backend)
-        const normalizedUser = {
-          ...userData,
-          id: userData.id || userData.usuarioId,
-        };
-        setUser(normalizedUser);
+      // Registrar/atualizar sessão ativa no .NET via BFF proxy
+      try {
+        const nomeUsuario = normalizedUser.nome || normalizedUser.login || "Usuário";
+        await apiClient.post("/SessaoAtiva/registrar", {
+          usuarioId: normalizedUser.id,
+          nomeUsuario,
+          email: normalizedUser.email || "",
+          perfil: normalizedUser.grupoAcesso || "Usuário",
+          tokenSessao: "",
+        });
 
-        // 🔥 IMPORTANTE: Registrar/Atualizar sessão quando usuário já está logado (refresh/reload)
-        try {
-          const token = localStorage.getItem("token") || "";
+        setTimeout(async () => {
+          try {
+            const paginaAtual = getCurrentPageName();
+            await apiClient.put(`/SessaoAtiva/atualizar/${normalizedUser.id}`, {
+              paginaAtual,
+            });
+          } catch {}
+        }, 500);
 
-          // Garantir que temos um nome válido para registrar a sessão
-          const nomeUsuario = normalizedUser.nome || normalizedUser.login || "Usuário";
-
-          console.log("📝 Registrando sessão com dados:", {
-            usuarioId: normalizedUser.id,
-            nomeUsuario,
-            email: normalizedUser.email,
-            perfil: normalizedUser.grupoAcesso,
-          });
-
-          // Registrar sessão no backend (isso irá criar ou substituir sessão existente)
-          await apiClient.post("/SessaoAtiva/registrar", {
-            usuarioId: normalizedUser.id,
-            nomeUsuario: nomeUsuario,
-            email: normalizedUser.email || "",
-            perfil: normalizedUser.grupoAcesso || "Usuário",
-            tokenSessao: token,
-          });
-
-          console.log("✅ Sessão registrada/atualizada após reload");
-
-          // Atualizar página atual imediatamente
-          setTimeout(async () => {
-            try {
-              const paginaAtual = getCurrentPageName();
-              await apiClient.put(
-                `/SessaoAtiva/atualizar/${normalizedUser.id}`,
-                {
-                  paginaAtual: paginaAtual,
-                }
-              );
-            } catch (error) {
-              console.error("Erro ao atualizar página inicial:", error);
-            }
-          }, 500);
-
-          // Iniciar heartbeat para manter sessão ativa
-          startHeartbeat(normalizedUser.id);
-        } catch (error) {
-          console.error("Erro ao registrar sessão após reload:", error);
-          // Não impedir o usuário de usar o sistema mesmo se o registro de sessão falhar
-        }
+        startHeartbeat(normalizedUser.id);
+      } catch (error) {
+        console.error("Erro ao registrar sessão após reload:", error);
       }
     } catch (error) {
       console.error("Erro ao verificar autenticação:", error);
-      logout();
     } finally {
       setIsLoading(false);
     }
@@ -304,83 +301,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     senha: string;
   }): Promise<{ success: boolean; error?: string }> => {
     try {
-      const response = await apiClient.post("/Auth/login", loginData);
+      // BFF seta o cookie httpOnly e retorna { success, user }
+      const response = await bffFetch<{ success: boolean; user: User }>(
+        "/auth/login",
+        { method: "POST", body: JSON.stringify(loginData) }
+      );
 
-      if (response.error) {
-        return { success: false, error: response.error };
+      if (response.error || !response.data?.success) {
+        return { success: false, error: response.error ?? "Credenciais inválidas" };
       }
 
-      if (
-        response.data &&
-        typeof response.data === "object" &&
-        "usuarioId" in response.data
-      ) {
-        const userData = response.data as any;
-        const token = userData.token;
+      const userData = response.data.user;
+      const normalizedUser = {
+        ...userData,
+        id: (userData as any).usuarioId ?? (userData as any).id ?? 0,
+      };
 
-        // Normalizar: garantir que id esteja definido (pode vir como usuarioId do backend)
-        const normalizedUser = {
-          ...userData,
-          id: userData.id || userData.usuarioId,
-        };
+      setUser(normalizedUser);
+      localStorage.setItem("user", JSON.stringify(normalizedUser));
+      localStorage.setItem("isAuthenticated", "true");
 
-        setUser(normalizedUser);
-        localStorage.setItem("user", JSON.stringify(normalizedUser));
-        localStorage.setItem("isAuthenticated", "true");
+      // Registrar sessão ativa no .NET via BFF proxy
+      try {
+        await apiClient.post("/SessaoAtiva/registrar", {
+          usuarioId: normalizedUser.id,
+          nomeUsuario: normalizedUser.nome,
+          email: normalizedUser.email,
+          perfil: normalizedUser.grupoAcesso,
+          tokenSessao: "",
+        });
 
-        // Salvar token se fornecido pelo backend
-        if (token) {
-          localStorage.setItem("token", token);
-        }
-
-        // Registrar sessão ativa
-        try {
-          await apiClient.post("/SessaoAtiva/registrar", {
-            usuarioId: userData.usuarioId,
-            nomeUsuario: userData.nome,
-            email: userData.email,
-            perfil: userData.grupoAcesso,
-            tokenSessao: token || "",
-          });
-
-          // Atualizar página atual imediatamente após registro
-          setTimeout(async () => {
-            try {
-              const paginaAtual = getCurrentPageName();
-              await apiClient.put(
-                `/SessaoAtiva/atualizar/${userData.usuarioId}`,
-                {
-                paginaAtual: paginaAtual,
-                }
-              );
-            } catch (error) {
-              console.error("Erro ao atualizar página inicial:", error);
-            }
-          }, 500);
-        } catch (error) {
-          console.error("Erro ao registrar sessão:", error);
-        }
-
-        // Iniciar heartbeat para manter sessão ativa
-        startHeartbeat(userData.usuarioId);
-
-        // Invalidar cache de permissões antes de carregar
-        permissionService.invalidateCache();
-
-        // Carregar permissões após login
-        await loadPermissions();
-
-        return { success: true };
+        setTimeout(async () => {
+          try {
+            const paginaAtual = getCurrentPageName();
+            await apiClient.put(`/SessaoAtiva/atualizar/${normalizedUser.id}`, {
+              paginaAtual,
+            });
+          } catch {}
+        }, 500);
+      } catch (error) {
+        console.error("Erro ao registrar sessão:", error);
       }
 
-      return { success: false, error: "Resposta inválida do servidor" };
+      startHeartbeat(normalizedUser.id);
+      permissionService.invalidateCache();
+      await loadPermissions();
+
+      return { success: true };
     } catch (error) {
       return { success: false, error: "Erro de conexão com o servidor" };
     }
   };
 
   const logout = async () => {
-    // Remover sessão ativa do servidor
+    // Remover sessão ativa no .NET via BFF proxy
     if (user?.id) {
       try {
         await apiClient.delete(`/SessaoAtiva/remover/${user.id}`);
@@ -389,7 +363,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // Parar heartbeat
+    // Invalidar cookie httpOnly no BFF
+    await bffFetch("/auth/logout", { method: "POST" }).catch(() => {});
+
     stopHeartbeat();
 
     setUser(null);
@@ -397,7 +373,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     permissionService.invalidateCache();
     localStorage.removeItem("user");
     localStorage.removeItem("isAuthenticated");
-    localStorage.removeItem("token");
     router.push("/login");
   };
 

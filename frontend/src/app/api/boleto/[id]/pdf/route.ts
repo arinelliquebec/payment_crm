@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getApiUrl } from "../../../../../../env.config";
+import { getServerBackendUrl } from "@/lib/server-api-url";
 
 export const maxDuration = 60;
 
@@ -8,7 +8,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const apiUrl = getApiUrl();
+  const apiUrl = getServerBackendUrl();
   const authHeader = request.headers.get("Authorization") ?? "";
 
   const headers: Record<string, string> = {

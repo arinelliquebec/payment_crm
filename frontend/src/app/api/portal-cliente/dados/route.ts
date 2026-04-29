@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getApiUrl } from "../../../../../env.config";
+import { getServerBackendUrl } from "@/lib/server-api-url";
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const apiUrl = getApiUrl();
+    const apiUrl = getServerBackendUrl();
     console.log(
       `🔍 Portal Cliente Dados: Buscando dados do cliente ${clienteId}`,
     );

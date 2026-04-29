@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getApiUrl } from "../../../../../env.config";
+import { getServerBackendUrl } from "@/lib/server-api-url";
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const apiUrl = getApiUrl();
+    const apiUrl = getServerBackendUrl();
     console.log(
       `🔍 Portal Cliente Auth: Buscando ${tipoDocumento}: ${documento}`
     );

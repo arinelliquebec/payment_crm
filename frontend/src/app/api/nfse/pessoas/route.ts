@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5101/api";
+    const apiUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:5101/api";
     const res = await fetch(`${apiUrl}/Cliente`, {
       method: "GET",
       // Adicionando um timeout se possível, mas fetch nativo aguarda
