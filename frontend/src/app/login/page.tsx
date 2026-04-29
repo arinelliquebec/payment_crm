@@ -19,17 +19,9 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-
-interface LoginFormData {
-  cpf: string;
-  senha: string;
-}
-
-interface LoginErrors {
-  cpf?: string;
-  senha?: string;
-  general?: string;
-}
+import { loginSchema, type LoginFormData } from "@/lib/validation/schemas";
+import { useFormValidation } from "@/hooks/useFormValidation";
+import { sanitizeInput, sanitizeCPF } from "@/lib/validation/sanitize";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -39,9 +31,16 @@ export default function LoginPage() {
     senha: "",
   });
 
-  const [errors, setErrors] = useState<LoginErrors>({});
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [generalError, setGeneralError] = useState<string>();
+
+  // Validação em tempo real com Zod
+  const validation = useFormValidation(loginSchema, {
+    validateOnChange: true,
+    validateOnBlur: true,
+    debounceMs: 500,
+  });
 
   // Redirecionar se já estiver autenticado
   useEffect(() => {
@@ -53,74 +52,84 @@ export default function LoginPage() {
   // Handlers
   const handleInputChange = useCallback(
     (field: keyof LoginFormData, value: string) => {
-      setFormData((prev) => ({ ...prev, [field]: value }));
+      // Sanitizar input
+      const sanitizedValue = field === "cpf"
+        ? sanitizeCPF(value)
+        : sanitizeInput(value, "text");
 
-      // Limpar erro do campo quando começar a digitar
-      if (errors[field as keyof LoginErrors]) {
-        setErrors((prev) => ({ ...prev, [field]: undefined }));
+      const newFormData = { ...formData, [field]: sanitizedValue };
+      setFormData(newFormData);
+
+      // Validar em tempo real
+      validation.handleChange(field, sanitizedValue, newFormData);
+
+      // Limpar erro geral
+      if (generalError) {
+        setGeneralError(undefined);
       }
     },
-    [errors]
+    [formData, validation, generalError]
   );
 
-  const validateForm = (): boolean => {
-    const newErrors: LoginErrors = {};
-
-    // Validar CPF
-    const cpfLimpo = formData.cpf.replace(/\D/g, "");
-    if (!formData.cpf.trim()) {
-      newErrors.cpf = "CPF é obrigatório";
-    } else if (cpfLimpo.length !== 11) {
-      newErrors.cpf = "CPF deve ter 11 dígitos";
-    }
-
-    // Validar senha
-    if (!formData.senha.trim()) {
-      newErrors.senha = "Senha é obrigatória";
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
+  const handleBlur = useCallback(
+    (field: keyof LoginFormData) => {
+      validation.handleBlur(field, formData[field], formData);
+    },
+    [formData, validation]
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     setLoading(true);
-    setErrors({});
+    setGeneralError(undefined);
 
     try {
-      const isValid = validateForm();
+      // Marcar todos os campos como tocados
+      validation.touchAll(formData);
+
+      // Validar todos os campos
+      const isValid = await validation.validateAll(formData);
+
       if (!isValid) {
         setLoading(false);
         return;
       }
 
+      // Sanitizar dados antes de enviar
+      const sanitizedData = {
+        login: sanitizeCPF(formData.cpf),
+        senha: sanitizeInput(formData.senha, "text"),
+      };
+
       // Fazer login usando o contexto
-      const result = await authLogin({
-        login: formData.cpf.replace(/\D/g, ""), // Enviar apenas números
-        senha: formData.senha,
-      });
+      const result = await authLogin(sanitizedData);
 
       if (result.success) {
         // Redirecionar para dashboard
         router.push("/dashboard");
       } else {
-        setErrors({ general: result.error || "Erro ao fazer login" });
+        setGeneralError(result.error || "Erro ao fazer login");
       }
     } catch (error) {
-      setErrors({
-        general:
-          "Erro interno. Tente novamente ou entre em contato com o suporte.",
-      });
+      setGeneralError(
+        "Erro interno. Tente novamente ou entre em contato com o suporte."
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-950 flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Background Effects */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(212,175,55,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(212,175,55,0.03)_1px,transparent_1px)] bg-[size:64px_64px]" />
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl opacity-30 animate-pulse" style={{ animationDuration: '4s' }} />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-amber-600/10 rounded-full blur-3xl opacity-20 animate-pulse" style={{ animationDuration: '6s', animationDelay: '2s' }} />
+      </div>
+
+      <div className="w-full max-w-md relative z-10">
         {/* Logo/Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -131,16 +140,16 @@ export default function LoginPage() {
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             transition={{ delay: 0.2, type: "spring" }}
-            className="w-20 h-20 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4"
+            className="w-20 h-20 bg-gradient-to-br from-amber-500 to-amber-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-amber-500/30"
           >
-            <Building2 className="w-10 h-10 text-primary-600" />
+            <Building2 className="w-10 h-10 text-neutral-950" />
           </motion.div>
 
-          <h1 className="text-4xl font-bold text-neutral-800 mb-2">
+          <h1 className="text-4xl font-bold text-gradient-amber mb-2">
             CRM ARRIGHI
           </h1>
 
-          <p className="text-neutral-600">
+          <p className="text-neutral-400">
             Sistema de Gestão de Relacionamento com Clientes
           </p>
         </motion.div>
@@ -150,7 +159,7 @@ export default function LoginPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="bg-white rounded-3xl shadow-premium-lg p-8"
+          className="bg-neutral-900/95 backdrop-blur-xl rounded-3xl shadow-xl border border-neutral-800 p-8"
         >
           {/* Header do Card */}
           <div className="text-center mb-8">
@@ -158,16 +167,16 @@ export default function LoginPage() {
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               transition={{ delay: 0.3, type: "spring" }}
-              className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4"
+              className="w-16 h-16 bg-amber-500/20 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-500/30"
             >
-              <LogIn className="w-8 h-8 text-primary-600" />
+              <LogIn className="w-8 h-8 text-amber-400" />
             </motion.div>
 
-            <h2 className="text-2xl font-bold text-neutral-800 mb-2">
+            <h2 className="text-2xl font-bold text-neutral-50 mb-2">
               Fazer Login
             </h2>
 
-            <p className="text-neutral-600">
+            <p className="text-neutral-400">
               Entre com suas credenciais para acessar o sistema
             </p>
           </div>
@@ -176,80 +185,87 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Erro geral */}
             <AnimatePresence>
-              {errors.general && (
+              {generalError && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3"
+                  className="bg-red-500/20 border border-red-500/30 rounded-xl p-4 flex items-center gap-3"
                 >
-                  <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-                  <p className="text-sm text-red-700">{errors.general}</p>
+                  <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+                  <p className="text-sm text-red-300">{generalError}</p>
                 </motion.div>
               )}
             </AnimatePresence>
 
             {/* CPF */}
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-neutral-700">
+              <label className="block text-sm font-medium text-neutral-300">
                 CPF *
               </label>
               <div className="relative">
-                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-400" />
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
                 <input
                   type="text"
                   value={formData.cpf}
                   onChange={(e) => handleInputChange("cpf", e.target.value)}
+                  onBlur={() => handleBlur("cpf")}
                   placeholder="Digite seu CPF"
+                  maxLength={14}
                   className={cn(
-                    "w-full h-12 pl-12 pr-4 bg-white/80 backdrop-blur-sm rounded-xl",
-                    "border-2 transition-all duration-300",
+                    "w-full h-12 pl-12 pr-4 bg-neutral-800/50 backdrop-blur-sm rounded-xl",
+                    "border-2 transition-all duration-300 text-neutral-100",
                     "focus:outline-none focus:ring-4",
-                    "placeholder:text-neutral-400",
-                    errors.cpf
-                      ? "border-red-300 focus:border-red-500 focus:ring-red-500/20"
-                      : "border-neutral-200 focus:border-primary-500 focus:ring-primary-500/20 hover:border-neutral-300"
+                    "placeholder:text-neutral-500",
+                    validation.hasFieldError("cpf")
+                      ? "border-red-500/50 focus:border-red-500 focus:ring-red-500/20"
+                      : "border-neutral-700 focus:border-amber-500 focus:ring-amber-500/20 hover:border-neutral-600"
                   )}
                 />
               </div>
-              {errors.cpf && (
-                <motion.p
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="text-sm text-red-600 flex items-center gap-1"
-                >
-                  <AlertCircle className="w-4 h-4" />
-                  {errors.cpf}
-                </motion.p>
-              )}
+              <AnimatePresence>
+                {validation.getFieldError("cpf") && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="text-sm text-red-400 flex items-center gap-1"
+                  >
+                    <AlertCircle className="w-4 h-4" />
+                    {validation.getFieldError("cpf")}
+                  </motion.p>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Senha */}
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-neutral-700">
+              <label className="block text-sm font-medium text-neutral-300">
                 Senha *
               </label>
               <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-400" />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
                 <input
                   type={showPassword ? "text" : "password"}
                   value={formData.senha}
                   onChange={(e) => handleInputChange("senha", e.target.value)}
+                  onBlur={() => handleBlur("senha")}
                   placeholder="Digite sua senha"
+                  maxLength={100}
                   className={cn(
-                    "w-full h-12 pl-12 pr-12 bg-white/80 backdrop-blur-sm rounded-xl",
-                    "border-2 transition-all duration-300",
+                    "w-full h-12 pl-12 pr-12 bg-neutral-800/50 backdrop-blur-sm rounded-xl",
+                    "border-2 transition-all duration-300 text-neutral-100",
                     "focus:outline-none focus:ring-4",
-                    "placeholder:text-neutral-400",
-                    errors.senha
-                      ? "border-red-300 focus:border-red-500 focus:ring-red-500/20"
-                      : "border-neutral-200 focus:border-primary-500 focus:ring-primary-500/20 hover:border-neutral-300"
+                    "placeholder:text-neutral-500",
+                    validation.hasFieldError("senha")
+                      ? "border-red-500/50 focus:border-red-500 focus:ring-red-500/20"
+                      : "border-neutral-700 focus:border-amber-500 focus:ring-amber-500/20 hover:border-neutral-600"
                   )}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 transition-colors"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-amber-400 transition-colors"
                 >
                   {showPassword ? (
                     <EyeOff className="w-5 h-5" />
@@ -258,16 +274,19 @@ export default function LoginPage() {
                   )}
                 </button>
               </div>
-              {errors.senha && (
-                <motion.p
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="text-sm text-red-600 flex items-center gap-1"
-                >
-                  <AlertCircle className="w-4 h-4" />
-                  {errors.senha}
-                </motion.p>
-              )}
+              <AnimatePresence>
+                {validation.getFieldError("senha") && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="text-sm text-red-400 flex items-center gap-1"
+                  >
+                    <AlertCircle className="w-4 h-4" />
+                    {validation.getFieldError("senha")}
+                  </motion.p>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Botões */}
@@ -279,10 +298,10 @@ export default function LoginPage() {
                 whileTap={{ scale: 0.98 }}
                 className={cn(
                   "w-full h-12 rounded-xl font-medium transition-all duration-300",
-                  "focus:outline-none focus:ring-4 focus:ring-primary-500/20",
+                  "focus:outline-none focus:ring-4 focus:ring-amber-500/20",
                   loading
-                    ? "bg-neutral-300 cursor-not-allowed"
-                    : "bg-primary-500 hover:bg-primary-600 text-white shadow-md hover:shadow-lg"
+                    ? "bg-neutral-700 cursor-not-allowed text-neutral-500"
+                    : "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-neutral-950 shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30"
                 )}
               >
                 {loading ? (
@@ -302,12 +321,12 @@ export default function LoginPage() {
 
           {/* Link para cadastro */}
           <div className="mt-8 text-center">
-            <p className="text-neutral-600 text-sm mb-4">
+            <p className="text-neutral-400 text-sm mb-4">
               Ainda não tem uma conta?
             </p>
             <Link
               href="/cadastro"
-              className="inline-flex items-center gap-2 text-primary-600 hover:text-primary-700 font-medium transition-colors"
+              className="inline-flex items-center gap-2 text-amber-400 hover:text-amber-300 font-medium transition-colors"
             >
               <UserPlus className="w-4 h-4" />
               Criar conta
@@ -322,12 +341,12 @@ export default function LoginPage() {
           transition={{ delay: 0.5 }}
           className="text-center mt-8"
         >
-          <div className="flex items-center justify-center gap-2 text-neutral-500 text-sm">
-            <Shield className="w-4 h-4" />
+          <div className="flex items-center justify-center gap-2 text-neutral-400 text-sm">
+            <Shield className="w-4 h-4 text-amber-400" />
             Sistema seguro e protegido
           </div>
-          <p className="text-neutral-400 text-xs mt-2">
-            © 2024 CRM Arrighi. Todos os direitos reservados.
+          <p className="text-neutral-500 text-xs mt-2">
+            © 2025 CRM Arrighi. Todos os direitos reservados.
           </p>
         </motion.div>
       </div>

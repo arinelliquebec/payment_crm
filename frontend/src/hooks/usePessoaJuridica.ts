@@ -7,6 +7,7 @@ import {
   UpdatePessoaJuridicaDTO,
 } from "@/types/api";
 import { useAtividadeContext } from "@/contexts/AtividadeContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface UsePessoaJuridicaState {
   pessoas: PessoaJuridica[];
@@ -26,8 +27,10 @@ export function usePessoaJuridica() {
     updating: false,
     deleting: false,
   });
+  const [initialized, setInitialized] = useState(false);
 
   const { adicionarAtividade } = useAtividadeContext();
+  const { user } = useAuth();
 
   const setLoading = (loading: boolean) => {
     setState((prev) => ({ ...prev, loading }));
@@ -109,7 +112,7 @@ export function usePessoaJuridica() {
 
         // Registrar atividade
         adicionarAtividade(
-          "Admin User",
+          user?.nome || user?.login || "Usuário",
           `Cadastrou nova pessoa jurídica: ${data.razaoSocial}`,
           "success",
           `CNPJ: ${data.cnpj || "Não informado"}`,
@@ -145,7 +148,7 @@ export function usePessoaJuridica() {
 
         // Registrar atividade
         adicionarAtividade(
-          "Admin User",
+          user?.nome || user?.login || "Usuário",
           `Atualizou pessoa jurídica: ${data.razaoSocial}`,
           "info",
           `Email: ${data.email || "Não informado"}`,
@@ -185,7 +188,7 @@ export function usePessoaJuridica() {
         // Registrar atividade
         if (pessoaParaDeletar) {
           adicionarAtividade(
-            "Admin User",
+            user?.nome || user?.login || "Usuário",
             `Excluiu pessoa jurídica: ${pessoaParaDeletar.razaoSocial}`,
             "warning",
             `CNPJ: ${pessoaParaDeletar.cnpj || "Não informado"}`,
@@ -204,10 +207,13 @@ export function usePessoaJuridica() {
     [fetchPessoas, state.pessoas, adicionarAtividade]
   );
 
-  // Carregar dados iniciais
+  // Carregar dados iniciais - Proteção contra loops infinitos
   useEffect(() => {
-    fetchPessoas();
-  }, []); // Remover fetchPessoas da dependência para evitar loops
+    if (!initialized) {
+      fetchPessoas();
+      setInitialized(true);
+    }
+  }, [initialized, fetchPessoas]);
 
   return {
     ...state,

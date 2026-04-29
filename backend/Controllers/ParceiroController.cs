@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using CrmArrighi.Data;
 using CrmArrighi.Models;
+using CrmArrighi.Services;
 
 namespace CrmArrighi.Controllers
 {
@@ -10,10 +11,71 @@ namespace CrmArrighi.Controllers
     public class ParceiroController : ControllerBase
     {
         private readonly CrmArrighiContext _context;
+        private readonly IAuthorizationService _authorizationService;
 
-        public ParceiroController(CrmArrighiContext context)
+        public ParceiroController(CrmArrighiContext context, IAuthorizationService authorizationService)
         {
             _context = context;
+            _authorizationService = authorizationService;
+        }
+
+        // GET: api/Parceiro/count - Contar total de parceiros
+        [HttpGet("count")]
+        public async Task<ActionResult<int>> GetParceirosCount()
+        {
+            try
+            {
+                var count = await _context.Parceiros.Where(p => p.Ativo).CountAsync();
+                Console.WriteLine($"📊 GetParceirosCount: Total de {count} parceiros ativos");
+                return Ok(count);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ GetParceirosCount: Erro: {ex.Message}");
+                return StatusCode(500, new { message = "Erro ao contar parceiros" });
+            }
+        }
+
+        // GET: api/Parceiro/buscar?termo=xxx&limit=50
+        [HttpGet("buscar")]
+        public async Task<ActionResult<IEnumerable<Parceiro>>> BuscarParceiros([FromQuery] string? termo, [FromQuery] int limit = 50)
+        {
+            try
+            {
+                Console.WriteLine($"🔍 BuscarParceiros: Buscando com termo: {termo}, limit: {limit}");
+
+                IQueryable<Parceiro> query = _context.Parceiros
+                    .Include(p => p.PessoaFisica)
+                        .ThenInclude(pf => pf!.Endereco)
+                    .Include(p => p.Filial)
+                    .Where(p => p.Ativo);
+
+                // Se houver termo de busca, aplicar filtros
+                if (!string.IsNullOrWhiteSpace(termo))
+                {
+                    var termoLower = termo.ToLower().Trim();
+                    query = query.Where(p =>
+                        (p.PessoaFisica != null && p.PessoaFisica.Nome != null && p.PessoaFisica.Nome.ToLower().Contains(termoLower)) ||
+                        (p.PessoaFisica != null && p.PessoaFisica.EmailEmpresarial != null && p.PessoaFisica.EmailEmpresarial.ToLower().Contains(termoLower)) ||
+                        (p.OAB != null && p.OAB.ToLower().Contains(termoLower)) ||
+                        (p.Filial != null && p.Filial.Nome != null && p.Filial.Nome.ToLower().Contains(termoLower))
+                    );
+                }
+
+                // Ordenar PRIMEIRO (usa índice), depois limitar para performance
+                var parceiros = await query
+                    .OrderBy(p => p.PessoaFisica != null ? p.PessoaFisica.Nome : "")
+                    .Take(limit)
+                    .ToListAsync();
+
+                Console.WriteLine($"✅ BuscarParceiros: Encontrados {parceiros.Count} parceiros");
+                return Ok(parceiros);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ BuscarParceiros: Erro: {ex.Message}");
+                return StatusCode(500, $"Erro ao buscar parceiros: {ex.Message}");
+            }
         }
 
         // GET: api/Parceiro
@@ -22,15 +84,27 @@ namespace CrmArrighi.Controllers
         {
             try
             {
+                // Obter usuário logado para aplicar filtragem por filial
+                var usuarioIdHeader = Request.Headers["X-Usuario-Id"].FirstOrDefault();
+                if (!int.TryParse(usuarioIdHeader, out int usuarioId))
+                {
+                    return Unauthorized("Usuário não identificado na requisição.");
+                }
+
                 // Verificar se a tabela e colunas existem
                 await EnsureParceirosTableExists();
 
-                var parceiros = await _context.Parceiros
+                var parceirosQuery = _context.Parceiros
                     .Include(p => p.PessoaFisica)
                         .ThenInclude(pf => pf!.Endereco)
                     .Include(p => p.Filial)
-                    .Where(p => p.Ativo)
-                    .ToListAsync();
+                    .Where(p => p.Ativo);
+
+                // Aplicar filtragem por permissões de usuário (incluindo filial para Gestor de Filial)
+                var parceirosFiltrados = await _authorizationService.FilterParceirosByUserAsync(usuarioId, parceirosQuery);
+                var parceiros = await parceirosFiltrados.ToListAsync();
+
+                Console.WriteLine($"✅ GetParceiros: Encontrados {parceiros.Count} parceiros para usuário {usuarioId}");
 
                 // Ordena alfabeticamente por nome
                 return parceiros.OrderBy(p => p.PessoaFisica.Nome).ToList();
@@ -39,6 +113,20 @@ namespace CrmArrighi.Controllers
             {
                 Console.WriteLine($"Erro ao buscar parceiros: {ex.Message}");
                 return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+            }
+        }
+
+        // Método auxiliar para validar permissões
+        private async Task<bool> ValidarPermissaoEdicao(int usuarioId, int? targetId, string acao)
+        {
+            switch (acao.ToLower())
+            {
+                case "criar":
+                    return await _authorizationService.CanEditParceiroAsync(usuarioId, 0);
+                case "editar":
+                    return targetId.HasValue && await _authorizationService.CanEditParceiroAsync(usuarioId, targetId.Value);
+                default:
+                    return false;
             }
         }
 
@@ -56,7 +144,11 @@ namespace CrmArrighi.Controllers
 
                 if (parceiro == null)
                 {
-                    return NotFound("Parceiro não encontrado.");
+                    return NotFound(new {
+                        recurso = "Parceiro",
+                        id = id,
+                        mensagem = $"Parceiro #{id} não foi encontrado"
+                    });
                 }
 
                 return parceiro;
@@ -102,7 +194,11 @@ namespace CrmArrighi.Controllers
 
                 if (parceiro == null)
                 {
-                    return NotFound("Parceiro não encontrado para esta pessoa física.");
+                    return NotFound(new {
+                        recurso = "Parceiro",
+                        pessoaFisicaId = pessoaFisicaId,
+                        mensagem = $"Parceiro vinculado à Pessoa Física #{pessoaFisicaId} não foi encontrado"
+                    });
                 }
 
                 return parceiro;
@@ -117,6 +213,22 @@ namespace CrmArrighi.Controllers
         [HttpPost]
         public async Task<ActionResult<Parceiro>> CreateParceiro(CreateParceiroDTO createParceiroDTO)
         {
+            // Validar permissões - Administrativo de Filial não pode criar
+            var usuarioIdHeader = Request.Headers["X-Usuario-Id"].FirstOrDefault();
+            if (int.TryParse(usuarioIdHeader, out int usuarioId))
+            {
+                var canEdit = await ValidarPermissaoEdicao(usuarioId, null, "criar");
+                if (!canEdit)
+                {
+                    Console.WriteLine($"❌ CreateParceiro: Usuário {usuarioId} não tem permissão para criar parceiros");
+                    return Forbid("Você não tem permissão para criar parceiros.");
+                }
+            }
+            else
+            {
+                return Unauthorized("Usuário não identificado na requisição.");
+            }
+
             try
             {
                 // Verificar se a tabela Parceiros existe, se não, criar
@@ -152,7 +264,7 @@ namespace CrmArrighi.Controllers
                     OAB = createParceiroDTO.OAB,
                     Email = createParceiroDTO.Email,
                     Telefone = createParceiroDTO.Telefone,
-                    DataCadastro = DateTime.Now,
+                    DataCadastro = DateTime.UtcNow,
                     Ativo = true
                 };
 
@@ -188,7 +300,11 @@ namespace CrmArrighi.Controllers
                 var parceiro = await _context.Parceiros.FindAsync(id);
                 if (parceiro == null)
                 {
-                    return NotFound("Parceiro não encontrado.");
+                    return NotFound(new {
+                        recurso = "Parceiro",
+                        id = id,
+                        mensagem = $"Parceiro #{id} não foi encontrado"
+                    });
                 }
 
                 // Verificar se a filial existe
@@ -203,7 +319,7 @@ namespace CrmArrighi.Controllers
                 parceiro.OAB = updateParceiroDTO.OAB;
                 parceiro.Email = updateParceiroDTO.Email;
                 parceiro.Telefone = updateParceiroDTO.Telefone;
-                parceiro.DataAtualizacao = DateTime.Now;
+                parceiro.DataAtualizacao = DateTime.UtcNow;
 
                 try
                 {
@@ -213,7 +329,11 @@ namespace CrmArrighi.Controllers
                 {
                     if (!ParceiroExists(id))
                     {
-                        return NotFound("Parceiro não encontrado.");
+                        return NotFound(new {
+                            recurso = "Parceiro",
+                            id = id,
+                            mensagem = $"Parceiro #{id} não foi encontrado"
+                        });
                     }
                     else
                     {
@@ -238,12 +358,16 @@ namespace CrmArrighi.Controllers
                 var parceiro = await _context.Parceiros.FindAsync(id);
                 if (parceiro == null)
                 {
-                    return NotFound("Parceiro não encontrado.");
+                    return NotFound(new {
+                        recurso = "Parceiro",
+                        id = id,
+                        mensagem = $"Parceiro #{id} não foi encontrado"
+                    });
                 }
 
                 // Soft delete - apenas marca como inativo
                 parceiro.Ativo = false;
-                parceiro.DataAtualizacao = DateTime.Now;
+                parceiro.DataAtualizacao = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync();
 
@@ -306,7 +430,45 @@ namespace CrmArrighi.Controllers
 
         private async Task EnsureParceirosTableExists()
         {
-            await CreateTableHelper.CreateParceirosTableIfNotExists(_context);
+            try
+            {
+                // Tentar executar uma query simples na tabela Parceiros
+                await _context.Database.ExecuteSqlRawAsync("SELECT TOP 1 * FROM Parceiros");
+
+                // Verificar se os campos Email e Telefone existem
+                await EnsureEmailAndTelefoneColumnsExist();
+            }
+            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Message.Contains("Invalid object name 'Parceiros'"))
+            {
+                // Tabela não existe, criar agora
+                await _context.Database.ExecuteSqlRawAsync(@"
+                    CREATE TABLE [dbo].[Parceiros] (
+                        [Id] int IDENTITY(1,1) NOT NULL,
+                        [PessoaFisicaId] int NOT NULL,
+                        [FilialId] int NOT NULL,
+                        [OAB] nvarchar(20) NULL,
+                        [Email] nvarchar(100) NULL,
+                        [Telefone] nvarchar(20) NULL,
+                        [DataCadastro] datetime2 NOT NULL,
+                        [DataAtualizacao] datetime2 NULL,
+                        [Ativo] bit NOT NULL,
+                        CONSTRAINT [PK_Parceiros] PRIMARY KEY ([Id])
+                    );
+
+                    CREATE INDEX [IX_Parceiros_FilialId] ON [dbo].[Parceiros] ([FilialId]);
+                    CREATE UNIQUE INDEX [IX_Parceiros_PessoaFisicaId] ON [dbo].[Parceiros] ([PessoaFisicaId]);
+
+                    ALTER TABLE [dbo].[Parceiros] ADD CONSTRAINT [FK_Parceiros_Filiais_FilialId]
+                        FOREIGN KEY ([FilialId]) REFERENCES [dbo].[Filiais] ([Id]);
+                    ALTER TABLE [dbo].[Parceiros] ADD CONSTRAINT [FK_Parceiros_PessoasFisicas_PessoaFisicaId]
+                        FOREIGN KEY ([PessoaFisicaId]) REFERENCES [dbo].[PessoasFisicas] ([Id]);
+                ");
+
+                Console.WriteLine("Tabela Parceiros criada com sucesso!");
+            }
+
+            // Sempre verificar se as colunas Email e Telefone existem
+            await EnsureEmailAndTelefoneColumnsExist();
         }
 
         private async Task EnsureEmailAndTelefoneColumnsExist()
@@ -315,13 +477,42 @@ namespace CrmArrighi.Controllers
             {
                 Console.WriteLine("Verificando e adicionando campos Email e Telefone à tabela Parceiros...");
 
-                await _context.Database.ExecuteSqlRawAsync(@"
-                    ALTER TABLE ""Parceiros""
-                        ADD COLUMN IF NOT EXISTS ""Email"" character varying(100) NULL;
+                // Tentar adicionar as colunas diretamente - se já existirem, o SQL Server retornará erro que podemos ignorar
+                try
+                {
+                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE [Parceiros] ADD [Email] NVARCHAR(100) NULL");
+                    Console.WriteLine("✅ Campo Email adicionado à tabela Parceiros");
+                }
+                catch (Exception emailEx)
+                {
+                    if (emailEx.Message.Contains("already exists") || emailEx.Message.Contains("duplicate") || emailEx.Message.Contains("Column names in each table must be unique"))
+                    {
+                        Console.WriteLine("ℹ️  Campo Email já existe na tabela Parceiros");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"❌ Erro ao adicionar campo Email: {emailEx.Message}");
+                        throw;
+                    }
+                }
 
-                    ALTER TABLE ""Parceiros""
-                        ADD COLUMN IF NOT EXISTS ""Telefone"" character varying(20) NULL;
-                ");
+                try
+                {
+                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE [Parceiros] ADD [Telefone] NVARCHAR(20) NULL");
+                    Console.WriteLine("✅ Campo Telefone adicionado à tabela Parceiros");
+                }
+                catch (Exception telefoneEx)
+                {
+                    if (telefoneEx.Message.Contains("already exists") || telefoneEx.Message.Contains("duplicate") || telefoneEx.Message.Contains("Column names in each table must be unique"))
+                    {
+                        Console.WriteLine("ℹ️  Campo Telefone já existe na tabela Parceiros");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"❌ Erro ao adicionar campo Telefone: {telefoneEx.Message}");
+                        throw;
+                    }
+                }
 
                 Console.WriteLine("✅ Verificação dos campos Email e Telefone concluída");
             }

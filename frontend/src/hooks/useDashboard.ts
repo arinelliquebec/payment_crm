@@ -1,6 +1,7 @@
 // src/hooks/useDashboard.ts
 import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "@/lib/api";
+import { retryOperation } from "@/hooks/useRetry";
 import { PessoaFisica, PessoaJuridica, Usuario } from "@/types/api";
 import { getApiUrl } from "../../env.config";
 
@@ -39,55 +40,69 @@ export function useDashboard() {
     setState((prev) => ({ ...prev, stats }));
   };
 
-  // Calcular estatísticas com base nos dados das APIs
+  // Calcular estatísticas usando endpoints otimizados de contagem
   const fetchStats = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      // Fazer requisições paralelas para pessoas físicas, jurídicas e usuários
+      console.log(
+        "📊 useDashboard: Buscando estatísticas otimizadas (apenas contadores)"
+      );
+
+      // Fazer requisições paralelas para contadores otimizados com retry
       const [
-        pessoasFisicasResponse,
-        pessoasJuridicasResponse,
-        usuariosResponse,
+        countPessoasFisicasResponse,
+        countPessoasJuridicasResponse,
+        countUsuariosResponse,
       ] = await Promise.all([
-        apiClient.get<PessoaFisica[]>("/PessoaFisica"),
-        apiClient.get<PessoaJuridica[]>("/PessoaJuridica"),
-        apiClient.get<Usuario[]>("/Usuario"),
+        retryOperation(() => apiClient.get<number>("/PessoaFisica/count"), {
+          maxAttempts: 2,
+          delay: 500,
+        }),
+        retryOperation(() => apiClient.get<number>("/PessoaJuridica/count"), {
+          maxAttempts: 2,
+          delay: 500,
+        }),
+        retryOperation(() => apiClient.get<number>("/Usuario/count"), {
+          maxAttempts: 2,
+          delay: 500,
+        }),
       ]);
 
       // Verificar se há erros
-      if (pessoasFisicasResponse.error) {
+      if (countPessoasFisicasResponse.error) {
         console.error(
-          "❌ Erro em PessoasFisicas:",
-          pessoasFisicasResponse.error
+          "❌ Erro em PessoasFisicas/count:",
+          countPessoasFisicasResponse.error
         );
         throw new Error(
-          `Erro ao carregar pessoas físicas: ${pessoasFisicasResponse.error}`
+          `Erro ao contar pessoas físicas: ${countPessoasFisicasResponse.error}`
         );
       }
-      if (pessoasJuridicasResponse.error) {
+      if (countPessoasJuridicasResponse.error) {
         console.error(
-          "❌ Erro em PessoasJuridicas:",
-          pessoasJuridicasResponse.error
+          "❌ Erro em PessoasJuridicas/count:",
+          countPessoasJuridicasResponse.error
         );
         throw new Error(
-          `Erro ao carregar pessoas jurídicas: ${pessoasJuridicasResponse.error}`
+          `Erro ao contar pessoas jurídicas: ${countPessoasJuridicasResponse.error}`
         );
       }
-      if (usuariosResponse.error) {
-        console.error("❌ Erro em Usuarios:", usuariosResponse.error);
-        throw new Error(`Erro ao carregar usuários: ${usuariosResponse.error}`);
+      if (countUsuariosResponse.error) {
+        console.error(
+          "❌ Erro em Usuarios/count:",
+          countUsuariosResponse.error
+        );
+        throw new Error(
+          `Erro ao contar usuários: ${countUsuariosResponse.error}`
+        );
       }
 
-      const pessoasFisicas = pessoasFisicasResponse.data || [];
-      const pessoasJuridicas = pessoasJuridicasResponse.data || [];
-      const usuarios = usuariosResponse.data || [];
-
-      // Calcular estatísticas
-      const totalPessoasFisicas = pessoasFisicas.length;
-      const totalPessoasJuridicas = pessoasJuridicas.length;
-      const totalUsuarios = usuarios.length;
+      // Obter os valores dos contadores
+      const totalPessoasFisicas = countPessoasFisicasResponse.data || 0;
+      const totalPessoasJuridicas = countPessoasJuridicasResponse.data || 0;
+      const totalUsuarios = countUsuariosResponse.data || 0;
 
       const stats: DashboardStats = {
         totalPessoasFisicas,
@@ -95,6 +110,10 @@ export function useDashboard() {
         totalUsuarios,
       };
 
+      console.log(
+        "✅ useDashboard: Estatísticas carregadas com sucesso:",
+        stats
+      );
       setStats(stats);
     } catch (error) {
       console.error("❌ useDashboard: Erro capturado:", error);

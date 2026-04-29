@@ -1,0 +1,289 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using CrmArrighi.Data;
+using CrmArrighi.Models;
+
+namespace CrmArrighi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class ClienteController : ControllerBase
+    {
+        private readonly CrmArrighiContext _context;
+
+        public ClienteController(CrmArrighiContext context)
+        {
+            _context = context;
+        }
+
+        // GET: api/Cliente
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<Cliente>>> GetClientes()
+        {
+            try
+            {
+                Console.WriteLine("🔍 GetClientes: Buscando TODOS os clientes SEM FILTROS");
+
+                // RETORNAR TODOS OS DADOS SEM RESTRIÇÕES
+                var clientes = await _context.Clientes
+                    .Include(c => c.PessoaFisica)
+                        .ThenInclude(pf => pf!.Endereco)
+                    .Include(c => c.PessoaJuridica)
+                        .ThenInclude(pj => pj!.Endereco)
+                    .Include(c => c.Filial)
+                    .ToListAsync();
+
+                Console.WriteLine($"✅ GetClientes: Retornando {clientes.Count} clientes");
+
+                return Ok(clientes);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ GetClientes: Erro: {ex.Message}");
+                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+            }
+        }
+
+        // GET: api/Cliente/buscar-por-cpf/{cpf}
+        [HttpGet("buscar-por-cpf/{cpf}")]
+        public async Task<ActionResult<Cliente>> GetClientePorCpf(string cpf)
+        {
+            try
+            {
+                Console.WriteLine($"🔍 GetClientePorCpf: Buscando cliente com CPF: {cpf}");
+
+                // Remover caracteres especiais do CPF para busca
+                var cpfLimpo = cpf.Replace(".", "").Replace("-", "").Replace(" ", "");
+                Console.WriteLine($"🔍 GetClientePorCpf: CPF limpo: {cpfLimpo}");
+
+                var cliente = await _context.Clientes
+                    .Include(c => c.PessoaFisica)
+                        .ThenInclude(pf => pf!.Endereco)
+                    .Include(c => c.PessoaJuridica)
+                        .ThenInclude(pj => pj!.Endereco)
+                    .Include(c => c.Filial)
+                    .FirstOrDefaultAsync(c => c.PessoaFisica != null &&
+                        c.PessoaFisica.Cpf != null &&
+                        c.PessoaFisica.Cpf.Replace(".", "").Replace("-", "").Replace(" ", "") == cpfLimpo);
+
+                if (cliente == null)
+                {
+                    Console.WriteLine($"❌ GetClientePorCpf: Cliente com CPF {cpf} não encontrado");
+                    return NotFound($"Cliente com CPF {cpf} não encontrado");
+                }
+
+                Console.WriteLine($"✅ GetClientePorCpf: Cliente encontrado: {cliente.PessoaFisica?.Nome} (ID: {cliente.Id})");
+                return Ok(cliente);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ GetClientePorCpf: Erro: {ex.Message}");
+                Console.WriteLine($"❌ GetClientePorCpf: StackTrace: {ex.StackTrace}");
+                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+            }
+        }
+
+        // GET: api/Cliente/buscar-por-cnpj/{cnpj}
+        [HttpGet("buscar-por-cnpj/{cnpj}")]
+        public async Task<ActionResult<Cliente>> GetClientePorCnpj(string cnpj)
+        {
+            try
+            {
+                Console.WriteLine($"🔍 GetClientePorCnpj: Buscando cliente com CNPJ: {cnpj}");
+
+                // Remover caracteres especiais do CNPJ para busca
+                var cnpjLimpo = cnpj.Replace(".", "").Replace("/", "").Replace("-", "").Replace(" ", "");
+                Console.WriteLine($"🔍 GetClientePorCnpj: CNPJ limpo: {cnpjLimpo}");
+
+                var cliente = await _context.Clientes
+                    .Include(c => c.PessoaFisica)
+                        .ThenInclude(pf => pf!.Endereco)
+                    .Include(c => c.PessoaJuridica)
+                        .ThenInclude(pj => pj!.Endereco)
+                    .Include(c => c.PessoaJuridica)
+                        .ThenInclude(pj => pj!.ResponsavelTecnico)
+                    .Include(c => c.Filial)
+                    .FirstOrDefaultAsync(c => c.PessoaJuridica != null &&
+                        c.PessoaJuridica.Cnpj != null &&
+                        c.PessoaJuridica.Cnpj.Replace(".", "").Replace("/", "").Replace("-", "").Replace(" ", "") == cnpjLimpo);
+
+                if (cliente == null)
+                {
+                    Console.WriteLine($"❌ GetClientePorCnpj: Cliente com CNPJ {cnpj} não encontrado");
+                    return NotFound($"Cliente com CNPJ {cnpj} não encontrado");
+                }
+
+                Console.WriteLine($"✅ GetClientePorCnpj: Cliente encontrado: {cliente.PessoaJuridica?.RazaoSocial} (ID: {cliente.Id})");
+                return Ok(cliente);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ GetClientePorCnpj: Erro: {ex.Message}");
+                Console.WriteLine($"❌ GetClientePorCnpj: StackTrace: {ex.StackTrace}");
+                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+            }
+        }
+
+        // GET: api/Cliente/buscar-por-documento/{documento}
+        [HttpGet("buscar-por-documento/{documento}")]
+        public async Task<ActionResult<Cliente>> GetClientePorDocumento(string documento)
+        {
+            try
+            {
+                Console.WriteLine($"🔍 GetClientePorDocumento: Buscando cliente com documento: {documento}");
+
+                // Remover caracteres especiais do documento para busca
+                var documentoLimpo = documento.Replace(".", "").Replace("/", "").Replace("-", "").Replace(" ", "");
+                Console.WriteLine($"🔍 GetClientePorDocumento: Documento limpo: {documentoLimpo}");
+
+                // Buscar tanto por CPF quanto por CNPJ
+                var cliente = await _context.Clientes
+                    .Include(c => c.PessoaFisica)
+                        .ThenInclude(pf => pf!.Endereco)
+                    .Include(c => c.PessoaJuridica)
+                        .ThenInclude(pj => pj!.Endereco)
+                    .Include(c => c.PessoaJuridica)
+                        .ThenInclude(pj => pj!.ResponsavelTecnico)
+                    .Include(c => c.Filial)
+                    .FirstOrDefaultAsync(c =>
+                        (c.PessoaFisica != null &&
+                         c.PessoaFisica.Cpf != null &&
+                         c.PessoaFisica.Cpf.Replace(".", "").Replace("-", "").Replace(" ", "") == documentoLimpo) ||
+                        (c.PessoaJuridica != null &&
+                         c.PessoaJuridica.Cnpj != null &&
+                         c.PessoaJuridica.Cnpj.Replace(".", "").Replace("/", "").Replace("-", "").Replace(" ", "") == documentoLimpo));
+
+                if (cliente == null)
+                {
+                    Console.WriteLine($"❌ GetClientePorDocumento: Cliente com documento {documento} não encontrado");
+                    return NotFound($"Cliente com documento {documento} não encontrado");
+                }
+
+                var nomeCliente = cliente.PessoaFisica?.Nome ?? cliente.PessoaJuridica?.RazaoSocial ?? "Nome não encontrado";
+                Console.WriteLine($"✅ GetClientePorDocumento: Cliente encontrado: {nomeCliente} (ID: {cliente.Id})");
+                return Ok(cliente);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ GetClientePorDocumento: Erro: {ex.Message}");
+                Console.WriteLine($"❌ GetClientePorDocumento: StackTrace: {ex.StackTrace}");
+                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+            }
+        }
+
+        // GET: api/Cliente/{id}
+        [HttpGet("{id:int}")]
+        public async Task<ActionResult<Cliente>> GetCliente(int id)
+        {
+            var cliente = await _context.Clientes
+                .Include(c => c.PessoaFisica)
+                    .ThenInclude(pf => pf!.Endereco)
+                .Include(c => c.PessoaJuridica)
+                    .ThenInclude(pj => pj!.Endereco)
+                .Include(c => c.Filial)
+                .FirstOrDefaultAsync(c => c.Id == id);
+
+            if (cliente == null)
+            {
+                return NotFound($"Cliente com ID {id} não encontrado.");
+            }
+
+            return cliente;
+        }
+
+        // POST: api/Cliente/test
+        [HttpPost("test")]
+        public async Task<ActionResult<string>> TestPost()
+        {
+            return Ok("POST funcionando!");
+        }
+
+        // POST: api/Cliente
+        [HttpPost]
+        public async Task<ActionResult<Cliente>> PostCliente(CreateClienteDTO createDto)
+        {
+            try
+            {
+                Console.WriteLine($"🔍 PostCliente: Iniciando criação de cliente");
+                Console.WriteLine($"🔍 PostCliente: TipoPessoa: {createDto.TipoPessoa}, PessoaId: {createDto.PessoaId}");
+
+                // Validar se a pessoa existe
+                if (createDto.TipoPessoa.ToLower() == "fisica")
+                {
+                    var pessoaFisica = await _context.PessoasFisicas.FindAsync(createDto.PessoaId);
+                    if (pessoaFisica == null)
+                    {
+                        return BadRequest($"Pessoa física com ID {createDto.PessoaId} não encontrada.");
+                    }
+                }
+                else if (createDto.TipoPessoa.ToLower() == "juridica")
+                {
+                    var pessoaJuridica = await _context.PessoasJuridicas.FindAsync(createDto.PessoaId);
+                    if (pessoaJuridica == null)
+                    {
+                        return BadRequest($"Pessoa jurídica com ID {createDto.PessoaId} não encontrada.");
+                    }
+                }
+                else
+                {
+                    return BadRequest("TipoPessoa deve ser 'Fisica' ou 'Juridica'.");
+                }
+
+                // Verificar se já existe cliente para esta pessoa
+                var clienteExistente = await _context.Clientes
+                    .Where(c => (createDto.TipoPessoa.ToLower() == "fisica" && c.PessoaFisicaId == createDto.PessoaId) ||
+                               (createDto.TipoPessoa.ToLower() == "juridica" && c.PessoaJuridicaId == createDto.PessoaId))
+                    .FirstOrDefaultAsync();
+
+                if (clienteExistente != null)
+                {
+                    return BadRequest("Já existe um cliente cadastrado para esta pessoa.");
+                }
+
+                // Validar filial se fornecida
+                if (createDto.FilialId.HasValue)
+                {
+                    var filial = await _context.Filiais.FindAsync(createDto.FilialId.Value);
+                    if (filial == null)
+                    {
+                        return BadRequest($"Filial com ID {createDto.FilialId} não encontrada.");
+                    }
+                }
+
+                // Criar o cliente
+                var cliente = new Cliente
+                {
+                    PessoaFisicaId = createDto.TipoPessoa.ToLower() == "fisica" ? createDto.PessoaId : null,
+                    PessoaJuridicaId = createDto.TipoPessoa.ToLower() == "juridica" ? createDto.PessoaId : null,
+                    FilialId = createDto.FilialId,
+                    Status = createDto.Status ?? "Ativo",
+                    Observacoes = createDto.Observacoes,
+                    DataCadastro = DateTime.UtcNow
+                };
+
+                _context.Clientes.Add(cliente);
+                await _context.SaveChangesAsync();
+
+                Console.WriteLine($"✅ PostCliente: Cliente criado com ID {cliente.Id}");
+
+                // Retornar o cliente criado com includes
+                var clienteCriado = await _context.Clientes
+                    .Include(c => c.PessoaFisica)
+                        .ThenInclude(pf => pf!.Endereco)
+                    .Include(c => c.PessoaJuridica)
+                        .ThenInclude(pj => pj!.Endereco)
+                    .Include(c => c.Filial)
+                    .FirstOrDefaultAsync(c => c.Id == cliente.Id);
+
+                return CreatedAtAction(nameof(GetCliente), new { id = cliente.Id }, clienteCriado);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ PostCliente: Erro: {ex.Message}");
+                Console.WriteLine($"❌ PostCliente: StackTrace: {ex.StackTrace}");
+                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+            }
+        }
+
+    }
+}

@@ -15,12 +15,37 @@ namespace CrmArrighi.Data
         public DbSet<Endereco> Enderecos { get; set; }
         public DbSet<Usuario> Usuarios { get; set; }
         public DbSet<Cliente> Clientes { get; set; }
+        public DbSet<HistoricoCliente> HistoricoClientes { get; set; }
         public DbSet<HistoricoConsultor> HistoricoConsultores { get; set; }
         public DbSet<Filial> Filiais { get; set; }
         public DbSet<Consultor> Consultores { get; set; }
         public DbSet<Parceiro> Parceiros { get; set; }
         public DbSet<Contrato> Contratos { get; set; }
         public DbSet<HistoricoSituacaoContrato> HistoricoSituacaoContratos { get; set; }
+        public DbSet<Boleto> Boletos { get; set; }
+        public DbSet<GrupoAcesso> GruposAcesso { get; set; }
+        public DbSet<Permissao> Permissoes { get; set; }
+        public DbSet<PermissaoGrupo> PermissoesGrupos { get; set; }
+        public DbSet<SessaoAtiva> SessoesAtivas { get; set; }
+        public DbSet<PasswordReset> PasswordResets { get; set; }
+        public DbSet<LogAtividade> LogsAtividades { get; set; }
+        public DbSet<AuditLog> AuditLogs { get; set; }
+        public DbSet<LogGeracaoBoleto> LogsGeracaoBoletos { get; set; }
+        public DbSet<Notificacao> Notificacoes { get; set; }
+        public DbSet<Lead> Leads { get; set; }
+        public DbSet<LeadInteracao> LeadInteracoes { get; set; }
+        public DbSet<IdempotencyKey> IdempotencyKeys { get; set; }
+
+        // Portal do Cliente
+        public DbSet<CredencialPortalCliente> CredenciaisPortalCliente { get; set; }
+        public DbSet<ConvitePortal> ConvitesPortal { get; set; }
+
+        // Documentos do Portal
+        public DbSet<DocumentoPortal> DocumentosPortal { get; set; }
+
+        // FrappYOU - Colaboradores
+        public DbSet<PessoaFisicaFradema> PessoasFisicasFradema { get; set; }
+        public DbSet<ColaboradorFradema> ColaboradoresFradema { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -38,7 +63,7 @@ namespace CrmArrighi.Data
                 .IsUnique();
 
             modelBuilder.Entity<PessoaFisica>()
-                .HasIndex(p => p.Email)
+                .HasIndex(p => p.EmailEmpresarial)
                 .IsUnique();
 
             // Configurações para PessoaJuridica
@@ -58,9 +83,13 @@ namespace CrmArrighi.Data
                 .HasIndex(p => p.Cnpj)
                 .IsUnique();
 
+            // ✅ E-mail de PJ NÃO é mais único para permitir grupos empresariais
+            // Empresas do mesmo grupo podem compartilhar o mesmo e-mail corporativo
+            // CNPJ continua sendo único (identificação fiscal)
+            // Segurança: E-mail de PJ não é usado para autenticação (Usuario tem login próprio)
             modelBuilder.Entity<PessoaJuridica>()
-                .HasIndex(p => p.Email)
-                .IsUnique();
+                .HasIndex(p => p.Email);
+            // .IsUnique(); // ❌ REMOVIDO - permite múltiplas empresas com mesmo e-mail
 
             // Configurações para Usuario
             modelBuilder.Entity<Usuario>()
@@ -110,10 +139,27 @@ namespace CrmArrighi.Data
                 .OnDelete(DeleteBehavior.Restrict)
                 .IsRequired(false); // Permitir null temporariamente
 
-            // Configurar precisão para ValorContrato
-            modelBuilder.Entity<Cliente>()
-                .Property(c => c.ValorContrato)
-                .HasPrecision(18, 2); // 18 dígitos total, 2 casas decimais
+            // Configurações para HistoricoCliente
+            modelBuilder.Entity<HistoricoCliente>()
+                .HasOne(h => h.Cliente)
+                .WithMany()
+                .HasForeignKey(h => h.ClienteId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<HistoricoCliente>()
+                .HasOne(h => h.Usuario)
+                .WithMany()
+                .HasForeignKey(h => h.UsuarioId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<HistoricoCliente>()
+                .HasIndex(h => h.ClienteId);
+
+            modelBuilder.Entity<HistoricoCliente>()
+                .HasIndex(h => h.UsuarioId);
+
+            modelBuilder.Entity<HistoricoCliente>()
+                .HasIndex(h => h.DataHora);
 
             // Configurações para HistoricoConsultor
             modelBuilder.Entity<HistoricoConsultor>()
@@ -180,6 +226,215 @@ namespace CrmArrighi.Data
                 .WithMany()
                 .HasForeignKey(h => h.ContratoId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // Configurações para Boleto
+            modelBuilder.Entity<Boleto>()
+                .HasOne(b => b.Contrato)
+                .WithMany()
+                .HasForeignKey(b => b.ContratoId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Índice único para NSU Code + NSU Date (um boleto por dia por NSU)
+            modelBuilder.Entity<Boleto>()
+                .HasIndex(b => new { b.NsuCode, b.NsuDate })
+                .IsUnique();
+
+            // Configurar precisão para valores monetários
+            modelBuilder.Entity<Boleto>()
+                .Property(b => b.NominalValue)
+                .HasPrecision(18, 2);
+
+            modelBuilder.Entity<Boleto>()
+                .Property(b => b.FinePercentage)
+                .HasPrecision(5, 2);
+
+            modelBuilder.Entity<Boleto>()
+                .Property(b => b.InterestPercentage)
+                .HasPrecision(5, 2);
+
+            modelBuilder.Entity<Boleto>()
+                .Property(b => b.DeductionValue)
+                .HasPrecision(18, 2);
+
+            // Configurações para GrupoAcesso
+            modelBuilder.Entity<GrupoAcesso>()
+                .HasIndex(g => g.Nome)
+                .IsUnique();
+
+            // Configurações para Permissao
+            modelBuilder.Entity<Permissao>()
+                .HasIndex(p => new { p.Modulo, p.Acao })
+                .IsUnique();
+
+            // Configurações para PermissaoGrupo
+            modelBuilder.Entity<PermissaoGrupo>()
+                .HasIndex(pg => new { pg.GrupoAcessoId, pg.PermissaoId })
+                .IsUnique();
+
+            modelBuilder.Entity<PermissaoGrupo>()
+                .HasOne(pg => pg.GrupoAcesso)
+                .WithMany(g => g.Permissoes)
+                .HasForeignKey(pg => pg.GrupoAcessoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<PermissaoGrupo>()
+                .HasOne(pg => pg.Permissao)
+                .WithMany(p => p.PermissaoGrupos)
+                .HasForeignKey(pg => pg.PermissaoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Configurações adicionais para Usuario
+            modelBuilder.Entity<Usuario>()
+                .HasOne(u => u.GrupoAcesso)
+                .WithMany(g => g.Usuarios)
+                .HasForeignKey(u => u.GrupoAcessoId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<Usuario>()
+                .HasOne(u => u.Filial)
+                .WithMany()
+                .HasForeignKey(u => u.FilialId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<Usuario>()
+                .HasOne(u => u.Consultor)
+                .WithMany()
+                .HasForeignKey(u => u.ConsultorId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Configurações para PasswordReset
+            modelBuilder.Entity<PasswordReset>()
+                .HasOne(pr => pr.Usuario)
+                .WithMany()
+                .HasForeignKey(pr => pr.UsuarioId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<PasswordReset>()
+                .HasIndex(pr => pr.Token)
+                .IsUnique();
+
+            // Configurações para LogGeracaoBoleto
+            modelBuilder.Entity<LogGeracaoBoleto>()
+                .HasOne(l => l.Usuario)
+                .WithMany()
+                .HasForeignKey(l => l.UsuarioId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<LogGeracaoBoleto>()
+                .Property(l => l.ValorTotalGerado)
+                .HasPrecision(18, 2);
+
+            modelBuilder.Entity<LogGeracaoBoleto>()
+                .HasIndex(l => l.DataExecucao);
+
+            // Configurações para Notificacao
+            modelBuilder.Entity<Notificacao>()
+                .HasOne(n => n.Usuario)
+                .WithMany()
+                .HasForeignKey(n => n.UsuarioId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<Notificacao>()
+                .HasOne(n => n.Boleto)
+                .WithMany()
+                .HasForeignKey(n => n.BoletoId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<Notificacao>()
+                .HasOne(n => n.Contrato)
+                .WithMany()
+                .HasForeignKey(n => n.ContratoId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<Notificacao>()
+                .HasOne(n => n.Cliente)
+                .WithMany()
+                .HasForeignKey(n => n.ClienteId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<Notificacao>()
+                .HasIndex(n => n.UsuarioId);
+
+            modelBuilder.Entity<Notificacao>()
+                .HasIndex(n => n.DataCriacao);
+
+            modelBuilder.Entity<Notificacao>()
+                .HasIndex(n => n.Lida);
+
+            // ── Portal do Cliente: CredenciaisPortalCliente ──────────────────
+            modelBuilder.Entity<CredencialPortalCliente>()
+                .ToTable("CredenciaisPortalCliente");
+
+            modelBuilder.Entity<CredencialPortalCliente>()
+                .HasIndex(c => c.Documento)
+                .IsUnique();
+
+            modelBuilder.Entity<CredencialPortalCliente>()
+                .HasIndex(c => c.ClienteId);
+
+            modelBuilder.Entity<CredencialPortalCliente>()
+                .HasIndex(c => c.TokenAcesso)
+                .HasFilter("[TokenAcesso] IS NOT NULL");
+
+            modelBuilder.Entity<CredencialPortalCliente>()
+                .HasOne(c => c.Cliente)
+                .WithMany()
+                .HasForeignKey(c => c.ClienteId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // ── Documentos do Portal ──────────────────────────────────────────
+            modelBuilder.Entity<DocumentoPortal>()
+                .ToTable("DocumentosPortal");
+
+            modelBuilder.Entity<DocumentoPortal>()
+                .HasIndex(d => d.ClienteId);
+
+            modelBuilder.Entity<DocumentoPortal>()
+                .HasIndex(d => d.Tipo);
+
+            modelBuilder.Entity<DocumentoPortal>()
+                .HasIndex(d => d.DataUpload);
+
+            modelBuilder.Entity<DocumentoPortal>()
+                .HasOne(d => d.Cliente)
+                .WithMany()
+                .HasForeignKey(d => d.ClienteId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // ── FrappYOU: PessoasFisicasFradema + ColaboradoresFradema ──────
+            // Tabelas já existem no banco — apenas mapear, sem gerar migrations
+
+            modelBuilder.Entity<PessoaFisicaFradema>()
+                .ToTable("PessoasFisicasFradema");
+
+            modelBuilder.Entity<ColaboradorFradema>()
+                .ToTable("ColaboradoresFradema");
+
+            modelBuilder.Entity<ColaboradorFradema>()
+                .HasOne(c => c.PessoaFisica)
+                .WithMany()
+                .HasForeignKey(c => c.PessoaFisicaId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // ── AuditLogs ──────────────────────────────────────────────
+            modelBuilder.Entity<AuditLog>()
+                .HasIndex(a => a.UsuarioId);
+
+            modelBuilder.Entity<AuditLog>()
+                .HasIndex(a => a.DataHora);
+
+            modelBuilder.Entity<AuditLog>()
+                .HasIndex(a => a.Acao);
+
+            modelBuilder.Entity<AuditLog>()
+                .HasIndex(a => a.Entidade);
+
+            modelBuilder.Entity<AuditLog>()
+                .HasIndex(a => a.Severidade);
+
+            // Ignorar navigation property - sem FK restritiva para permitir UsuarioId=0 em logs de login falho
+            modelBuilder.Entity<AuditLog>()
+                .Ignore(a => a.Usuario);
         }
     }
 }

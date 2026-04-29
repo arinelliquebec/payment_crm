@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using CrmArrighi.Data;
 using CrmArrighi.Models;
+using CrmArrighi.Services;
 
 namespace CrmArrighi.Controllers
 {
@@ -10,23 +11,96 @@ namespace CrmArrighi.Controllers
     public class PessoaJuridicaController : ControllerBase
     {
         private readonly CrmArrighiContext _context;
+        private readonly IAuthorizationService _authorizationService;
 
-        public PessoaJuridicaController(CrmArrighiContext context)
+        public PessoaJuridicaController(CrmArrighiContext context, IAuthorizationService authorizationService)
         {
             _context = context;
+            _authorizationService = authorizationService;
         }
 
         // GET: api/PessoaJuridica
         [HttpGet]
         public async Task<ActionResult<IEnumerable<PessoaJuridica>>> GetPessoasJuridicas()
         {
-            var pessoas = await _context.PessoasJuridicas
-                .Include(p => p.Endereco)
-                .Include(p => p.ResponsavelTecnico)
-                .ToListAsync();
+            try
+            {
+                Console.WriteLine("🔍 GetPessoasJuridicas: Buscando pessoas jurídicas no banco SQL Server Azure");
 
-            // Ordena alfabeticamente por razão social
-            return pessoas.OrderBy(p => p.RazaoSocial).ToList();
+                // SEMPRE retornar todos os dados ordenados alfabeticamente por razão social - SEM AUTENTICAÇÃO
+                var todasPessoas = await _context.PessoasJuridicas
+                    .Include(p => p.Endereco)
+                    .Include(p => p.ResponsavelTecnico)
+                    .OrderBy(p => p.RazaoSocial)
+                    .ToListAsync();
+
+                Console.WriteLine($"✅ GetPessoasJuridicas: Retornando {todasPessoas.Count} pessoas jurídicas do banco SQL Server Azure (ordenadas por razão social, com endereços)");
+                return Ok(todasPessoas);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ GetPessoasJuridicas: Erro ao acessar banco: {ex.Message}");
+                return StatusCode(500, $"Erro ao acessar banco de dados: {ex.Message}");
+            }
+        }
+
+        // GET: api/PessoaJuridica/count - Contar total de pessoas jurídicas
+        [HttpGet("count")]
+        public async Task<ActionResult<int>> GetPessoasJuridicasCount()
+        {
+            try
+            {
+                var count = await _context.PessoasJuridicas.CountAsync();
+                Console.WriteLine($"📊 GetPessoasJuridicasCount: Total de {count} pessoas jurídicas");
+                return Ok(count);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ GetPessoasJuridicasCount: Erro: {ex.Message}");
+                return StatusCode(500, new { message = "Erro ao contar pessoas jurídicas" });
+            }
+        }
+
+        // GET: api/PessoaJuridica/buscar?termo=xxx&limit=10
+        [HttpGet("buscar")]
+        public async Task<ActionResult<IEnumerable<PessoaJuridica>>> BuscarPessoasJuridicas([FromQuery] string? termo, [FromQuery] int limit = 50)
+        {
+            try
+            {
+                Console.WriteLine($"🔍 BuscarPessoasJuridicas: Buscando com termo: {termo}, limit: {limit}");
+
+                IQueryable<PessoaJuridica> query = _context.PessoasJuridicas
+                    .Include(p => p.Endereco)
+                    .Include(p => p.ResponsavelTecnico);
+
+                // Se houver termo de busca, aplicar filtros
+                if (!string.IsNullOrWhiteSpace(termo))
+                {
+                    var termoLower = termo.ToLower().Trim();
+                    var termoLimpo = termo.Replace(".", "").Replace("-", "").Replace("/", "").Replace(" ", "");
+
+                    query = query.Where(p =>
+                        (p.RazaoSocial != null && p.RazaoSocial.ToLower().Contains(termoLower)) ||
+                        (p.NomeFantasia != null && p.NomeFantasia.ToLower().Contains(termoLower)) ||
+                        (p.Email != null && p.Email.ToLower().Contains(termoLower)) ||
+                        (p.Cnpj != null && p.Cnpj.Replace(".", "").Replace("-", "").Replace("/", "").Replace(" ", "").Contains(termoLimpo))
+                    );
+                }
+
+                // Ordenar PRIMEIRO (usa índice), depois limitar para performance
+                var pessoas = await query
+                    .OrderBy(p => p.RazaoSocial)
+                    .Take(limit)
+                    .ToListAsync();
+
+                Console.WriteLine($"✅ BuscarPessoasJuridicas: Encontradas {pessoas.Count} pessoas");
+                return Ok(pessoas);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ BuscarPessoasJuridicas: Erro: {ex.Message}");
+                return StatusCode(500, $"Erro ao buscar pessoas jurídicas: {ex.Message}");
+            }
         }
 
         // GET: api/PessoaJuridica/5
@@ -74,6 +148,27 @@ namespace CrmArrighi.Controllers
                 return BadRequest("Responsável técnico não encontrado. É necessário cadastrar uma pessoa física primeiro.");
             }
 
+            // Verificar se CNPJ já existe
+            if (!string.IsNullOrWhiteSpace(pessoaJuridica.Cnpj))
+            {
+                var cnpjLimpo = pessoaJuridica.Cnpj.Replace(".", string.Empty)
+                                                    .Replace("-", string.Empty)
+                                                    .Replace("/", string.Empty)
+                                                    .Replace(" ", string.Empty);
+
+                var cnpjJaExiste = await _context.PessoasJuridicas
+                    .AnyAsync(p => p.Cnpj != null &&
+                        p.Cnpj.Replace(".", string.Empty)
+                             .Replace("-", string.Empty)
+                             .Replace("/", string.Empty)
+                             .Replace(" ", string.Empty) == cnpjLimpo);
+
+                if (cnpjJaExiste)
+                {
+                    return Conflict(new { message = "CNPJ já cadastrado.", field = "cnpj" });
+                }
+            }
+
             if (ModelState.IsValid)
             {
                 _context.PessoasJuridicas.Add(pessoaJuridica);
@@ -105,7 +200,7 @@ namespace CrmArrighi.Controllers
             {
                 try
                 {
-                    pessoaJuridica.DataAtualizacao = DateTime.Now;
+                    pessoaJuridica.DataAtualizacao = DateTime.UtcNow;
                     _context.Update(pessoaJuridica);
                     await _context.SaveChangesAsync();
                 }

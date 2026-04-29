@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "@/lib/api";
 import { Parceiro, CreateParceiroDTO, UpdateParceiroDTO } from "@/types/api";
 import { useAtividadeContext } from "@/contexts/AtividadeContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface UseParceiroState {
   parceiros: Parceiro[];
@@ -24,6 +25,7 @@ export function useParceiros() {
   });
 
   const { adicionarAtividade } = useAtividadeContext();
+  const { user } = useAuth();
 
   const fetchParceiros = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
@@ -159,7 +161,7 @@ export function useParceiros() {
         }));
 
         adicionarAtividade(
-          "Admin User",
+          user?.nome || user?.login || "Usuário",
           `Criou novo parceiro ${
             novoParceiro.pessoaFisica?.nome || novoParceiro.id
           }`,
@@ -216,7 +218,7 @@ export function useParceiros() {
         }));
 
         adicionarAtividade(
-          "Admin User",
+          user?.nome || user?.login || "Usuário",
           `Atualizou parceiro #${id}`,
           "info",
           "",
@@ -268,7 +270,7 @@ export function useParceiros() {
         }));
 
         adicionarAtividade(
-          "Admin User",
+          user?.nome || user?.login || "Usuário",
           `Excluiu parceiro #${id}`,
           "warning",
           "",

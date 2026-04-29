@@ -45,10 +45,10 @@ namespace CrmArrighi.Controllers
                             FilialId = 5 // São Paulo - SP
                         },
                         ConsultorId = 1,
-                        DataInicio = DateTime.Now.AddDays(-60),
-                        DataFim = DateTime.Now.AddDays(-30),
+                        DataInicio = DateTime.UtcNow.AddDays(-60),
+                        DataFim = DateTime.UtcNow.AddDays(-30),
                         MotivoTransferencia = "Reestruturação da equipe",
-                        DataCadastro = DateTime.Now.AddDays(-60)
+                        DataCadastro = DateTime.UtcNow.AddDays(-60)
                     },
                     new HistoricoConsultor
                     {
@@ -61,10 +61,10 @@ namespace CrmArrighi.Controllers
                             FilialId = 5 // São Paulo - SP
                         },
                         ConsultorId = 2,
-                        DataInicio = DateTime.Now.AddDays(-30),
+                        DataInicio = DateTime.UtcNow.AddDays(-30),
                         DataFim = null, // Período atual
                         MotivoTransferencia = null,
-                        DataCadastro = DateTime.Now.AddDays(-30)
+                        DataCadastro = DateTime.UtcNow.AddDays(-30)
                     }
                 };
 
@@ -127,10 +127,10 @@ namespace CrmArrighi.Controllers
                 // Definir data de início se não fornecida
                 if (historico.DataInicio == default)
                 {
-                    historico.DataInicio = DateTime.Now;
+                    historico.DataInicio = DateTime.UtcNow;
                 }
 
-                historico.DataCadastro = DateTime.Now;
+                historico.DataCadastro = DateTime.UtcNow;
 
                 _context.HistoricoConsultores.Add(historico);
                 await _context.SaveChangesAsync();
@@ -161,7 +161,7 @@ namespace CrmArrighi.Controllers
                     return BadRequest("Este período já foi finalizado");
                 }
 
-                historico.DataFim = DateTime.Now;
+                historico.DataFim = DateTime.UtcNow;
                 historico.MotivoTransferencia = motivoTransferencia;
 
                 await _context.SaveChangesAsync();

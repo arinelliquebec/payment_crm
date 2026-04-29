@@ -202,7 +202,7 @@ export const getAvatarColor = (name: string): string => {
     "bg-gradient-to-br from-pink-500 to-pink-600",
     "bg-gradient-to-br from-indigo-500 to-indigo-600",
     "bg-gradient-to-br from-red-500 to-red-600",
-    "bg-gradient-to-br from-yellow-500 to-yellow-600",
+    "bg-gradient-to-br from-amber-500 to-amber-600",
     "bg-gradient-to-br from-teal-500 to-teal-600",
   ];
 

@@ -10,10 +10,14 @@ namespace CrmArrighi.Models
         [StringLength(200, ErrorMessage = "O nome completo deve ter no máximo 200 caracteres")]
         public string Nome { get; set; } = string.Empty;
 
-        [Required(ErrorMessage = "O e-mail é obrigatório")]
-        [EmailAddress(ErrorMessage = "E-mail inválido")]
-        [StringLength(150, ErrorMessage = "O e-mail deve ter no máximo 150 caracteres")]
-        public string Email { get; set; } = string.Empty;
+        [Required(ErrorMessage = "O e-mail empresarial é obrigatório")]
+        [EmailAddress(ErrorMessage = "E-mail empresarial inválido")]
+        [StringLength(150, ErrorMessage = "O e-mail empresarial deve ter no máximo 150 caracteres")]
+        public string EmailEmpresarial { get; set; } = string.Empty;
+
+        [EmailAddress(ErrorMessage = "E-mail pessoal inválido")]
+        [StringLength(150, ErrorMessage = "O e-mail pessoal deve ter no máximo 150 caracteres")]
+        public string? EmailPessoal { get; set; }
 
         [StringLength(100, ErrorMessage = "O codinome deve ter no máximo 100 caracteres")]
         public string? Codinome { get; set; }

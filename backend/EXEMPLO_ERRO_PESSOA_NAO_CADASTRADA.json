@@ -1,0 +1,66 @@
+{
+  "cenario_1_pessoa_fisica_nao_encontrada": {
+    "endpoint": "POST /api/Usuario/create",
+    "status_code": 400,
+    "response": {
+      "error": "PESSOA_FISICA_NAO_ENCONTRADA",
+      "message": "A pessoa física especificada não está cadastrada no sistema.",
+      "details": "Antes de criar um usuário, é necessário primeiro cadastrar a pessoa física. Por favor, acesse o módulo de cadastro de Pessoas Físicas e complete o cadastro antes de criar o usuário.",
+      "pessoaFisicaId": 99999
+    }
+  },
+
+  "cenario_2_pessoa_fisica_obrigatoria": {
+    "endpoint": "POST /api/Usuario/create",
+    "status_code": 400,
+    "response": {
+      "error": "PESSOA_FISICA_OBRIGATORIA",
+      "message": "Pessoa Física é obrigatória quando o tipo é 'Fisica'.",
+      "details": "Para criar um usuário do tipo Pessoa Física, é necessário informar o ID da pessoa física no sistema."
+    }
+  },
+
+  "cenario_3_pessoa_juridica_nao_encontrada": {
+    "endpoint": "POST /api/Usuario/create",
+    "status_code": 400,
+    "response": {
+      "error": "PESSOA_JURIDICA_NAO_ENCONTRADA",
+      "message": "A pessoa jurídica especificada não está cadastrada no sistema.",
+      "details": "Antes de criar um usuário, é necessário primeiro cadastrar a pessoa jurídica. Por favor, acesse o módulo de cadastro de Pessoas Jurídicas e complete o cadastro antes de criar o usuário.",
+      "pessoaJuridicaId": 99999
+    }
+  },
+
+  "cenario_4_pessoa_juridica_obrigatoria": {
+    "endpoint": "POST /api/Usuario/create",
+    "status_code": 400,
+    "response": {
+      "error": "PESSOA_JURIDICA_OBRIGATORIA",
+      "message": "Pessoa Jurídica é obrigatória quando o tipo é 'Juridica'.",
+      "details": "Para criar um usuário do tipo Pessoa Jurídica, é necessário informar o ID da pessoa jurídica no sistema."
+    }
+  },
+
+  "cenario_5_atualizacao_pessoa_fisica_nao_encontrada": {
+    "endpoint": "PUT /api/Usuario/5",
+    "status_code": 400,
+    "response": {
+      "error": "PESSOA_FISICA_NAO_ENCONTRADA",
+      "message": "A pessoa física especificada não está cadastrada no sistema.",
+      "details": "Não é possível vincular o usuário a uma pessoa física inexistente. Por favor, cadastre a pessoa física primeiro.",
+      "pessoaFisicaId": 99999
+    }
+  },
+
+  "cenario_6_atualizacao_pessoa_juridica_nao_encontrada": {
+    "endpoint": "PUT /api/Usuario/5",
+    "status_code": 400,
+    "response": {
+      "error": "PESSOA_JURIDICA_NAO_ENCONTRADA",
+      "message": "A pessoa jurídica especificada não está cadastrada no sistema.",
+      "details": "Não é possível vincular o usuário a uma pessoa jurídica inexistente. Por favor, cadastre a pessoa jurídica primeiro.",
+      "pessoaJuridicaId": 99999
+    }
+  }
+}
+

@@ -1,0 +1,492 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using CrmArrighi.Data;
+using CrmArrighi.Models;
+using CrmArrighi.Services;
+using System.Text.Json;
+
+namespace CrmArrighi.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class BoletoController : ControllerBase
+    {
+        private readonly CrmArrighiContext _context;
+        private readonly ISantanderBoletoService _santanderService;
+        private readonly ILogger<BoletoController> _logger;
+        private readonly IAuthorizationService _authorizationService;
+
+        public BoletoController(
+            CrmArrighiContext context,
+            ISantanderBoletoService santanderService,
+            ILogger<BoletoController> logger,
+            IAuthorizationService authorizationService)
+        {
+            _context = context;
+            _santanderService = santanderService;
+            _logger = logger;
+            _authorizationService = authorizationService;
+        }
+
+        // GET: api/Boleto
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<BoletoResponseDTO>>> GetBoletos()
+        {
+            try
+            {
+                // Obter usuário logado para aplicar filtragem por filial
+                var usuarioIdHeader = Request.Headers["X-Usuario-Id"].FirstOrDefault();
+                if (!int.TryParse(usuarioIdHeader, out int usuarioId))
+                {
+                    return Unauthorized("Usuário não identificado na requisição.");
+                }
+
+                var boletosQuery = _context.Boletos
+                    .Include(b => b.Contrato)
+                        .ThenInclude(c => c.Cliente)
+                            .ThenInclude(cl => cl.PessoaFisica)
+                    .Include(b => b.Contrato)
+                        .ThenInclude(c => c.Cliente)
+                            .ThenInclude(cl => cl.PessoaJuridica);
+
+                // Aplicar filtragem por permissões de usuário (incluindo filial para Gestor de Filial)
+                var boletosFiltrados = await _authorizationService.FilterBoletosByUserAsync(usuarioId, boletosQuery);
+                var boletos = await boletosFiltrados.OrderByDescending(b => b.DataCadastro).ToListAsync();
+
+                _logger.LogInformation($"✅ GetBoletos: Encontrados {boletos.Count} boletos para usuário {usuarioId}");
+
+                var response = boletos.Select(MapearBoletoParaResponse).ToList();
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao buscar boletos");
+                return StatusCode(500, "Erro interno do servidor");
+            }
+        }
+
+        // GET: api/Boleto/5
+        [HttpGet("{id}")]
+        public async Task<ActionResult<BoletoResponseDTO>> GetBoleto(int id)
+        {
+            try
+            {
+                var boleto = await _context.Boletos
+                    .Include(b => b.Contrato)
+                        .ThenInclude(c => c.Cliente)
+                            .ThenInclude(cl => cl.PessoaFisica)
+                    .Include(b => b.Contrato)
+                        .ThenInclude(c => c.Cliente)
+                            .ThenInclude(cl => cl.PessoaJuridica)
+                    .FirstOrDefaultAsync(b => b.Id == id);
+
+                if (boleto == null)
+                {
+                    return NotFound($"Boleto com ID {id} não encontrado");
+                }
+
+                var response = MapearBoletoParaResponse(boleto);
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao buscar boleto ID: {Id}", id);
+                return StatusCode(500, "Erro interno do servidor");
+            }
+        }
+
+        // GET: api/Boleto/contrato/5
+        [HttpGet("contrato/{contratoId}")]
+        public async Task<ActionResult<IEnumerable<BoletoResponseDTO>>> GetBoletosPorContrato(int contratoId)
+        {
+            try
+            {
+                var boletos = await _context.Boletos
+                    .Include(b => b.Contrato)
+                        .ThenInclude(c => c.Cliente)
+                            .ThenInclude(cl => cl.PessoaFisica)
+                    .Include(b => b.Contrato)
+                        .ThenInclude(c => c.Cliente)
+                            .ThenInclude(cl => cl.PessoaJuridica)
+                    .Where(b => b.ContratoId == contratoId)
+                    .OrderByDescending(b => b.DataCadastro)
+                    .ToListAsync();
+
+                var response = boletos.Select(MapearBoletoParaResponse).ToList();
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao buscar boletos do contrato ID: {ContratoId}", contratoId);
+                return StatusCode(500, "Erro interno do servidor");
+            }
+        }
+
+        // POST: api/Boleto
+        [HttpPost]
+        public async Task<ActionResult<BoletoResponseDTO>> PostBoleto(CreateBoletoDTO dto)
+        {
+            try
+            {
+                _logger.LogInformation("Iniciando criação de boleto para contrato ID: {ContratoId}", dto.ContratoId);
+
+                // Validar se o contrato existe
+                var contrato = await _context.Contratos
+                    .Include(c => c.Cliente)
+                        .ThenInclude(cl => cl.PessoaFisica)
+                            .ThenInclude(pf => pf.Endereco)
+                    .Include(c => c.Cliente)
+                        .ThenInclude(cl => cl.PessoaJuridica)
+                            .ThenInclude(pj => pj.Endereco)
+                    .FirstOrDefaultAsync(c => c.Id == dto.ContratoId);
+
+                if (contrato == null)
+                {
+                    return BadRequest($"Contrato com ID {dto.ContratoId} não encontrado");
+                }
+
+                // Gerar NSU Code único
+                var nsuCode = await _santanderService.GerarProximoNsuCodeAsync();
+                var nsuDate = DateTime.Today;
+
+                // Criar boleto
+                var boleto = await CriarBoletoFromDTO(dto, contrato, nsuCode, nsuDate);
+
+                // Registrar na API Santander
+                try
+                {
+                    var santanderResponse = await _santanderService.RegistrarBoletoAsync(boleto);
+
+                    // Atualizar boleto com dados de resposta
+                    AtualizarBoletoComResposta(boleto, santanderResponse);
+                    boleto.Status = "REGISTRADO";
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Erro ao registrar boleto na API Santander");
+                    boleto.Status = "ERRO";
+                    boleto.ErrorMessage = ex.Message;
+                    boleto.ErrorCode = "API_ERROR";
+                }
+
+                // Salvar no banco
+                _context.Boletos.Add(boleto);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("Boleto criado com sucesso. ID: {Id}, NSU: {NsuCode}", boleto.Id, boleto.NsuCode);
+
+                var response = MapearBoletoParaResponse(boleto);
+                return CreatedAtAction(nameof(GetBoleto), new { id = boleto.Id }, response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao criar boleto");
+                return StatusCode(500, "Erro interno do servidor");
+            }
+        }
+
+        // PUT: api/Boleto/5/sincronizar
+        [HttpPut("{id}/sincronizar")]
+        public async Task<ActionResult<BoletoResponseDTO>> SincronizarBoleto(int id)
+        {
+            try
+            {
+                var boleto = await _context.Boletos
+                    .Include(b => b.Contrato)
+                    .FirstOrDefaultAsync(b => b.Id == id);
+
+                if (boleto == null)
+                {
+                    return NotFound($"Boleto com ID {id} não encontrado");
+                }
+
+                if (boleto.Status != "REGISTRADO")
+                {
+                    return BadRequest("Apenas boletos registrados podem ser sincronizados");
+                }
+
+                try
+                {
+                    var santanderResponse = await _santanderService.ConsultarBoletoAsync(boleto.NsuCode, boleto.NsuDate);
+                    AtualizarBoletoComResposta(boleto, santanderResponse);
+
+                    boleto.DataAtualizacao = DateTime.Now;
+                    await _context.SaveChangesAsync();
+
+                    _logger.LogInformation("Boleto sincronizado com sucesso. ID: {Id}", id);
+
+                    var response = MapearBoletoParaResponse(boleto);
+                    return Ok(response);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Erro ao sincronizar boleto ID: {Id}", id);
+                    return BadRequest($"Erro ao sincronizar boleto: {ex.Message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao sincronizar boleto ID: {Id}", id);
+                return StatusCode(500, "Erro interno do servidor");
+            }
+        }
+
+        // DELETE: api/Boleto/5
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteBoleto(int id)
+        {
+            try
+            {
+                var boleto = await _context.Boletos.FindAsync(id);
+                if (boleto == null)
+                {
+                    return NotFound($"Boleto com ID {id} não encontrado");
+                }
+
+                if (boleto.Status == "LIQUIDADO")
+                {
+                    return BadRequest("Não é possível excluir um boleto liquidado");
+                }
+
+                // Tentar cancelar na API Santander se estiver registrado
+                if (boleto.Status == "REGISTRADO")
+                {
+                    try
+                    {
+                        await _santanderService.CancelarBoletoAsync(boleto.NsuCode, boleto.NsuDate);
+                        _logger.LogInformation("Boleto cancelado na API Santander. ID: {Id}", id);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Erro ao cancelar boleto na API Santander. ID: {Id}", id);
+                        // Continua com a exclusão mesmo se não conseguir cancelar na API
+                    }
+                }
+
+                boleto.Ativo = false;
+                boleto.Status = "CANCELADO";
+                boleto.DataAtualizacao = DateTime.Now;
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("Boleto cancelado com sucesso. ID: {Id}", id);
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao cancelar boleto ID: {Id}", id);
+                return StatusCode(500, "Erro interno do servidor");
+            }
+        }
+
+        // GET: api/Boleto/dashboard
+        [HttpGet("dashboard")]
+        public async Task<ActionResult<object>> GetDashboard()
+        {
+            try
+            {
+                var hoje = DateTime.Today;
+                var inicioMes = new DateTime(hoje.Year, hoje.Month, 1);
+
+                var stats = await _context.Boletos
+                    .Where(b => b.Ativo)
+                    .GroupBy(b => 1)
+                    .Select(g => new
+                    {
+                        TotalBoletos = g.Count(),
+                        BoletosPendentes = g.Count(b => b.Status == "PENDENTE"),
+                        BoletosRegistrados = g.Count(b => b.Status == "REGISTRADO"),
+                        BoletosLiquidados = g.Count(b => b.Status == "LIQUIDADO"),
+                        BoletosVencidos = g.Count(b => b.Status == "VENCIDO"),
+                        BoletosCancelados = g.Count(b => b.Status == "CANCELADO"),
+                        ValorTotalRegistrado = g.Where(b => b.Status == "REGISTRADO").Sum(b => (decimal?)b.NominalValue) ?? 0,
+                        ValorTotalLiquidado = g.Where(b => b.Status == "LIQUIDADO").Sum(b => (decimal?)b.NominalValue) ?? 0,
+                        BoletosHoje = g.Count(b => b.DataCadastro.Date == hoje),
+                        BoletosEsteMes = g.Count(b => b.DataCadastro >= inicioMes)
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (stats == null)
+                {
+                    stats = new
+                    {
+                        TotalBoletos = 0,
+                        BoletosPendentes = 0,
+                        BoletosRegistrados = 0,
+                        BoletosLiquidados = 0,
+                        BoletosVencidos = 0,
+                        BoletosCancelados = 0,
+                        ValorTotalRegistrado = 0m,
+                        ValorTotalLiquidado = 0m,
+                        BoletosHoje = 0,
+                        BoletosEsteMes = 0
+                    };
+                }
+
+                return Ok(stats);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao gerar dashboard");
+                return StatusCode(500, "Erro interno do servidor");
+            }
+        }
+
+        #region Métodos Privados
+
+        private async Task<Boleto> CriarBoletoFromDTO(CreateBoletoDTO dto, Contrato contrato, string nsuCode, DateTime nsuDate)
+        {
+            // Determinar dados do pagador
+            var (nomeCliente, tipoDoc, numeroDoc, endereco) = ObterDadosCliente(contrato.Cliente);
+
+            var boleto = new Boleto
+            {
+                ContratoId = dto.ContratoId,
+                NsuCode = nsuCode,
+                NsuDate = nsuDate,
+                CovenantCode = "1234567", // TODO: Buscar das configurações
+                BankNumber = GerarNossoNumero(),
+                ClientNumber = dto.ClientNumber ?? $"CONT-{contrato.Id}",
+                DueDate = dto.DueDate,
+                IssueDate = DateTime.Today,
+                NominalValue = dto.NominalValue,
+                DocumentKind = "DUPLICATA_MERCANTIL",
+
+                // Dados do pagador
+                PayerName = nomeCliente,
+                PayerDocumentType = tipoDoc,
+                PayerDocumentNumber = numeroDoc,
+                PayerAddress = endereco?.Logradouro ?? "Endereço não informado",
+                PayerNeighborhood = endereco?.Bairro ?? "Bairro não informado",
+                PayerCity = endereco?.Cidade ?? "Cidade não informada",
+                PayerState = "SP", // TODO: Adicionar campo Estado no modelo Endereco
+                PayerZipCode = endereco?.Cep ?? "00000-000",
+
+                // Configurações opcionais
+                FinePercentage = dto.FinePercentage,
+                FineQuantityDays = dto.FineQuantityDays,
+                InterestPercentage = dto.InterestPercentage,
+                DeductionValue = dto.DeductionValue,
+                WriteOffQuantityDays = dto.WriteOffQuantityDays,
+
+                // Mensagens
+                Messages = dto.Messages != null && dto.Messages.Any() ?
+                    JsonSerializer.Serialize(dto.Messages) : null,
+
+                Status = "PENDENTE"
+            };
+
+            return boleto;
+        }
+
+        private (string nome, string tipoDoc, string numeroDoc, Endereco? endereco) ObterDadosCliente(Cliente cliente)
+        {
+            if (cliente.PessoaFisica != null)
+            {
+                return (
+                    cliente.PessoaFisica.Nome,
+                    "CPF",
+                    cliente.PessoaFisica.Cpf,
+                    cliente.PessoaFisica.Endereco
+                );
+            }
+            else if (cliente.PessoaJuridica != null)
+            {
+                return (
+                    cliente.PessoaJuridica.RazaoSocial,
+                    "CNPJ",
+                    cliente.PessoaJuridica.Cnpj,
+                    cliente.PessoaJuridica.Endereco
+                );
+            }
+            else
+            {
+                throw new InvalidOperationException("Cliente deve ter pessoa física ou jurídica associada");
+            }
+        }
+
+        private string GerarNossoNumero()
+        {
+            // Gerar nosso número baseado em timestamp + random
+            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var random = new Random().Next(100, 999);
+            return $"{timestamp}{random}".Substring(0, 13); // Máximo 13 caracteres
+        }
+
+        private void AtualizarBoletoComResposta(Boleto boleto, SantanderBoletoResponse response)
+        {
+            boleto.BarCode = response.barCode;
+            boleto.DigitableLine = response.digitableLine;
+            boleto.QrCodePix = response.qrCodePix;
+            boleto.QrCodeUrl = response.qrCodeUrl;
+
+            if (DateTime.TryParse(response.entryDate, out DateTime entryDate))
+            {
+                boleto.EntryDate = entryDate;
+            }
+
+            boleto.DataAtualizacao = DateTime.Now;
+        }
+
+        private BoletoResponseDTO MapearBoletoParaResponse(Boleto boleto)
+        {
+            var response = new BoletoResponseDTO
+            {
+                Id = boleto.Id,
+                ContratoId = boleto.ContratoId,
+                NsuCode = boleto.NsuCode,
+                NsuDate = boleto.NsuDate,
+                CovenantCode = boleto.CovenantCode,
+                BankNumber = boleto.BankNumber,
+                ClientNumber = boleto.ClientNumber,
+                DueDate = boleto.DueDate,
+                IssueDate = boleto.IssueDate,
+                NominalValue = boleto.NominalValue,
+                DocumentKind = boleto.DocumentKind,
+                Status = boleto.Status,
+                PayerName = boleto.PayerName,
+                PayerDocumentType = boleto.PayerDocumentType,
+                PayerDocumentNumber = boleto.PayerDocumentNumber,
+                PayerAddress = boleto.PayerAddress,
+                PayerNeighborhood = boleto.PayerNeighborhood,
+                PayerCity = boleto.PayerCity,
+                PayerState = boleto.PayerState,
+                PayerZipCode = boleto.PayerZipCode,
+                BarCode = boleto.BarCode,
+                DigitableLine = boleto.DigitableLine,
+                EntryDate = boleto.EntryDate,
+                QrCodePix = boleto.QrCodePix,
+                QrCodeUrl = boleto.QrCodeUrl,
+                DataCadastro = boleto.DataCadastro,
+                DataAtualizacao = boleto.DataAtualizacao,
+                ErrorCode = boleto.ErrorCode,
+                ErrorMessage = boleto.ErrorMessage,
+                TraceId = boleto.TraceId
+            };
+
+            // Adicionar informações do contrato se disponível
+            if (boleto.Contrato != null)
+            {
+                var clienteNome = boleto.Contrato.Cliente?.PessoaFisica?.Nome ??
+                                 boleto.Contrato.Cliente?.PessoaJuridica?.RazaoSocial ??
+                                 "Cliente não informado";
+
+                var clienteDoc = boleto.Contrato.Cliente?.PessoaFisica?.Cpf ??
+                                boleto.Contrato.Cliente?.PessoaJuridica?.Cnpj ??
+                                "Documento não informado";
+
+                response.Contrato = new ContratoInfoDTO
+                {
+                    Id = boleto.Contrato.Id,
+                    NumeroContrato = $"CONT-{boleto.Contrato.Id}",
+                    ClienteNome = clienteNome,
+                    ClienteDocumento = clienteDoc,
+                    ValorContrato = boleto.Contrato.ValorNegociado
+                };
+            }
+
+            return response;
+        }
+
+        #endregion
+    }
+}

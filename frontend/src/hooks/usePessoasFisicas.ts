@@ -26,44 +26,52 @@ export function usePessoasFisicas() {
     deleting: false,
   });
 
-  const fetchPessoasFisicas = useCallback(async () => {
-    setState((prev) => ({ ...prev, loading: true, error: null }));
-    try {
-      console.log("🔧 fetchPessoasFisicas: Iniciando busca...");
-      console.log("🔧 fetchPessoasFisicas: NODE_ENV =", process.env.NODE_ENV);
-      console.log(
-        "🔧 fetchPessoasFisicas: NEXT_PUBLIC_API_URL =",
-        process.env.NEXT_PUBLIC_API_URL
-      );
-      console.log(
-        "🔧 fetchPessoasFisicas: API Client base URL =",
-        apiClient.baseUrl
-      );
+  const fetchPessoasFisicas = useCallback(
+    async (termo?: string, limit: number = 50) => {
+      setState((prev) => ({ ...prev, loading: true, error: null }));
+      try {
+        console.log(
+          "🔧 fetchPessoasFisicas: Iniciando busca com termo:",
+          termo
+        );
 
-      const response = await apiClient.get("/PessoaFisica");
-      console.log("🔧 fetchPessoasFisicas: Resposta recebida:", response);
+        // Usar novo endpoint de busca otimizado
+        const endpoint = termo
+          ? `/PessoaFisica/buscar?termo=${encodeURIComponent(
+              termo
+            )}&limit=${limit}`
+          : `/PessoaFisica/buscar?limit=${limit}`;
 
-      if (response.error) {
-        throw new Error(response.error);
+        const response = await apiClient.get(endpoint);
+        console.log(
+          "🔧 fetchPessoasFisicas: Resposta recebida:",
+          Array.isArray(response.data) ? response.data.length : 0,
+          "pessoas"
+        );
+
+        if (response.error) {
+          throw new Error(response.error);
+        }
+
+        setState((prev) => ({
+          ...prev,
+          pessoas: response.data as PessoaFisica[],
+          loading: false,
+        }));
+      } catch (error: any) {
+        console.error("🔧 fetchPessoasFisicas: Erro:", error);
+        setState((prev) => ({
+          ...prev,
+          error:
+            error.message ||
+            error.response?.data?.message ||
+            "Erro ao carregar pessoas físicas",
+          loading: false,
+        }));
       }
-
-      setState((prev) => ({
-        ...prev,
-        pessoas: response.data as PessoaFisica[],
-        loading: false,
-      }));
-    } catch (error: any) {
-      console.error("🔧 fetchPessoasFisicas: Erro:", error);
-      setState((prev) => ({
-        ...prev,
-        error:
-          error.message ||
-          error.response?.data?.message ||
-          "Erro ao carregar pessoas físicas",
-        loading: false,
-      }));
-    }
-  }, []);
+    },
+    []
+  );
 
   const createPessoaFisica = useCallback(
     async (data: CreatePessoaFisicaDTO) => {
@@ -138,9 +146,11 @@ export function usePessoasFisicas() {
     setState((prev) => ({ ...prev, loading: true, error: null }));
     try {
       console.log("🔧 buscarPorCpf: Buscando CPF:", cpf);
+      const cpfLimpo = cpf.replace(/\D/g, "");
+      console.log("🔧 buscarPorCpf: CPF limpo:", cpfLimpo);
 
       const response = await apiClient.get(
-        `/PessoaFisica/buscar-por-cpf/${cpf}`
+        `/PessoaFisica/buscar-por-cpf/${encodeURIComponent(cpfLimpo)}`
       );
       console.log("🔧 buscarPorCpf: Resposta recebida:", response);
 
@@ -170,10 +180,8 @@ export function usePessoasFisicas() {
     setState((prev) => ({ ...prev, error: null }));
   }, []);
 
-  // Removido o useEffect para não carregar automaticamente
-  // useEffect(() => {
-  //   fetchPessoasFisicas();
-  // }, [fetchPessoasFisicas]);
+  // NÃO carregar automaticamente - apenas quando necessário
+  // Remover o useEffect que carrega automaticamente para melhor performance
 
   return {
     ...state,

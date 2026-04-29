@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -37,7 +38,7 @@ import {
   SituacaoContrato,
 } from "@/types/api";
 import { useContratos } from "@/hooks/useContratos";
-import { cn } from "@/lib/utils";
+import { cn, formatDocumentoDisplay } from "@/lib/utils";
 import { format, parseISO, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -52,7 +53,7 @@ function SituacaoBadge({ situacao }: { situacao: SituacaoContrato }) {
   const config = SituacaoContratoOptions.find((opt) => opt.value === situacao);
 
   if (!config) {
-    return <span className="text-xs text-gray-500">Desconhecido</span>;
+    return <span className="text-xs text-neutral-500">Desconhecido</span>;
   }
 
   return (
@@ -73,11 +74,16 @@ export default function ContratoDetalhes({
   onEdit,
   onMudarSituacao,
 }: ContratoDetalhesProps) {
+  const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<"info" | "historico">("info");
   const [historico, setHistorico] = useState<HistoricoSituacaoContrato[]>([]);
   const [loadingHistorico, setLoadingHistorico] = useState(false);
   const [clienteCompleto, setClienteCompleto] = useState<Cliente | null>(null);
   const [loadingCliente, setLoadingCliente] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const { getHistoricoSituacao, fetchClienteCompleto } = useContratos();
 
   const normalizeSituacao = useCallback(
@@ -90,6 +96,7 @@ export default function ContratoDetalhes({
         PROSPECTO: "Prospecto",
         "CONTRATO ENVIADO": "Contrato Enviado",
         "CONTRATO ASSINADO": "Contrato Assinado",
+        QUITADO: "Quitado",
         RETORNAR: "Retornar",
         "SEM INTERESSE": "Sem Interesse",
         RESCINDIDO: "RESCINDIDO",
@@ -204,7 +211,9 @@ export default function ContratoDetalhes({
     ? new Date(contrato.dataProximoContato) < new Date()
     : false;
 
-  return (
+  if (!mounted) return null;
+
+  const modalContent = (
     <AnimatePresence>
       {/* Overlay */}
       <motion.div
@@ -212,7 +221,7 @@ export default function ContratoDetalhes({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/30 backdrop-blur-sm z-[9999]"
+        className="fixed inset-0 bg-black/30 backdrop-blur-sm z-[99999]"
         onClick={onClose}
       />
 
@@ -222,7 +231,7 @@ export default function ContratoDetalhes({
         initial={{ opacity: 0, scale: 0.95, x: 100 }}
         animate={{ opacity: 1, scale: 1, x: 0 }}
         exit={{ opacity: 0, scale: 0.95, x: 100 }}
-        className="fixed right-0 top-0 h-full w-full max-w-4xl bg-white shadow-2xl z-[9999] flex flex-col"
+        className="fixed right-0 top-0 h-full w-full max-w-4xl bg-white shadow-2xl z-[99999] flex flex-col"
       >
         {/* Header */}
         <div className="bg-gradient-to-r from-primary-600 to-primary-700 px-6 py-4">
@@ -295,7 +304,7 @@ export default function ContratoDetalhes({
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       onClick={onMudarSituacao}
-                      className="flex items-center gap-2 px-3 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm font-medium transition-colors"
+                      className="flex items-center gap-2 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium transition-colors"
                     >
                       <RefreshCcw className="w-4 h-4" />
                       Mudar Situação
@@ -333,7 +342,7 @@ export default function ContratoDetalhes({
                       <p className="text-sm text-neutral-600">E-mail</p>
                       <p className="font-medium text-neutral-900 flex items-center gap-2">
                         <Mail className="w-4 h-4 text-neutral-400" />
-                        {cliente?.pessoaFisica?.email ||
+                        {cliente?.pessoaFisica?.emailEmpresarial ||
                           cliente?.pessoaJuridica?.email ||
                           "Não informado"}
                       </p>
@@ -350,9 +359,10 @@ export default function ContratoDetalhes({
                     <div>
                       <p className="text-sm text-neutral-600">Documento</p>
                       <p className="font-medium text-neutral-900">
-                        {cliente?.pessoaFisica?.cpf ||
-                          cliente?.pessoaJuridica?.cnpj ||
-                          "Não informado"}
+                        {formatDocumentoDisplay(
+                          cliente?.pessoaFisica?.cpf ||
+                            cliente?.pessoaJuridica?.cnpj
+                        ) || "Não informado"}
                       </p>
                     </div>
                     <div>
@@ -426,7 +436,8 @@ export default function ContratoDetalhes({
                       <p className="text-sm text-neutral-600">E-mail</p>
                       <p className="font-medium text-neutral-900 flex items-center gap-2">
                         <Mail className="w-4 h-4 text-neutral-400" />
-                        {consultor?.pessoaFisica?.email || "Não informado"}
+                        {consultor?.pessoaFisica?.emailEmpresarial ||
+                          "Não informado"}
                       </p>
                     </div>
                   </div>
@@ -484,7 +495,7 @@ export default function ContratoDetalhes({
                         <p className="font-medium text-neutral-900 flex items-center gap-2">
                           <Mail className="w-4 h-4 text-neutral-400" />
                           {contrato.parceiro.email ||
-                            contrato.parceiro.pessoaFisica?.email ||
+                            contrato.parceiro.pessoaFisica?.emailEmpresarial ||
                             "Não informado"}
                         </p>
                       </div>
@@ -665,47 +676,67 @@ export default function ContratoDetalhes({
               </div>
 
               {/* Dados de Pagamento */}
-              {(contrato.valorEntrada ||
-                contrato.valorParcela ||
-                contrato.numeroParcelas ||
-                contrato.primeiroVencimento) && (
+              {((contrato.valorEntrada !== undefined &&
+                contrato.valorEntrada !== null) ||
+                (contrato.valorParcela !== undefined &&
+                  contrato.valorParcela !== null) ||
+                (contrato.numeroParcelas !== undefined &&
+                  contrato.numeroParcelas !== null) ||
+                !!contrato.primeiroVencimento) && (
                 <div className="bg-white rounded-xl border border-neutral-200 p-5">
                   <h3 className="text-lg font-semibold text-neutral-900 mb-4 flex items-center gap-2">
                     <CreditCard className="w-5 h-5 text-primary-600" />
                     Dados de Pagamento
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {contrato.valorEntrada && (
-                      <div>
-                        <p className="text-sm text-neutral-600">
-                          Valor de Entrada
-                        </p>
-                        <p className="text-xl font-bold text-green-600">
-                          {formatCurrency(contrato.valorEntrada)}
-                        </p>
-                      </div>
-                    )}
-                    {contrato.valorParcela && (
-                      <div>
-                        <p className="text-sm text-neutral-600">
-                          Valor da Parcela
-                        </p>
-                        <p className="text-xl font-bold text-blue-600">
-                          {formatCurrency(contrato.valorParcela)}
-                        </p>
-                      </div>
-                    )}
-                    {contrato.numeroParcelas && (
-                      <div>
-                        <p className="text-sm text-neutral-600">
-                          Número de Parcelas
-                        </p>
-                        <p className="font-medium text-neutral-900 flex items-center gap-2">
-                          <CreditCard className="w-4 h-4 text-neutral-400" />
-                          {contrato.numeroParcelas}x
-                        </p>
-                      </div>
-                    )}
+                    {contrato.valorEntrada !== undefined &&
+                      contrato.valorEntrada !== null && (
+                        <div>
+                          <p className="text-sm text-neutral-600">
+                            Valor de Entrada
+                          </p>
+                          <p className="text-xl font-bold text-green-600">
+                            {formatCurrency(contrato.valorEntrada)}
+                          </p>
+                        </div>
+                      )}
+                    {contrato.valorParcela !== undefined &&
+                      contrato.valorParcela !== null && (
+                        <div>
+                          <p className="text-sm text-neutral-600">
+                            Valor da Parcela
+                          </p>
+                          <p className="text-xl font-bold text-blue-600">
+                            {formatCurrency(contrato.valorParcela)}
+                          </p>
+                        </div>
+                      )}
+                    {contrato.numeroParcelas !== undefined &&
+                      contrato.numeroParcelas !== null && (
+                        <div>
+                          <p className="text-sm text-neutral-600">
+                            Número de Parcelas
+                          </p>
+                          <p className="font-medium text-neutral-900 flex items-center gap-2">
+                            <CreditCard className="w-4 h-4 text-neutral-400" />
+                            {contrato.numeroParcelas}x
+                          </p>
+                        </div>
+                      )}
+                    {(contrato.numeroParcelas === undefined ||
+                      contrato.numeroParcelas === null) &&
+                      contrato.valorParcela !== undefined &&
+                      contrato.valorParcela !== null && (
+                        <div>
+                          <p className="text-sm text-neutral-600">
+                            Número de Parcelas
+                          </p>
+                          <p className="font-medium text-neutral-900 flex items-center gap-2">
+                            <CreditCard className="w-4 h-4 text-neutral-400" />
+                            Indeterminado
+                          </p>
+                        </div>
+                      )}
                     {contrato.primeiroVencimento && (
                       <div>
                         <p className="text-sm text-neutral-600">
@@ -847,4 +878,6 @@ export default function ContratoDetalhes({
       </motion.div>
     </AnimatePresence>
   );
+
+  return createPortal(modalContent, document.body);
 }

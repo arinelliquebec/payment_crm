@@ -12,7 +12,7 @@ Sistema CRM desenvolvido em C# com .NET 8, utilizando ASP.NET Core Web API e Ent
 - **SQL Server / Azure SQL Database**
 - **CORS habilitado para frontend**
 
-### Estrutura do Projeto!
+### Estrutura do Projeto
 ```
 CadastroPessoas/
 ├── Controllers/          # Controllers da API
@@ -31,7 +31,7 @@ CadastroPessoas/
 - **Codinome**: Nome alternativo (opcional, max 100 chars)
 - **Sexo**: Masculino/Feminino/Outro (obrigatório)
 - **DataNascimento**: Data de nascimento (obrigatório)
-- **EstadoCivil**: Estado civil (obrigatório)
+- **EstadoCivil**: Estado civil (opcional)
 - **Cpf**: CPF único (obrigatório, 14 chars)
 - **Rg**: RG (opcional, max 20 chars)
 - **Cnh**: CNH (opcional, max 20 chars)
@@ -276,5 +276,5 @@ Configurado para permitir todas as origens, métodos e headers para integração
 ✅ **Concluído**: Todas as funcionalidades implementadas
 ✅ **Testado**: Migrações aplicadas com sucesso
 ✅ **Produção**: Deployado no Azure App Service
-✅ **Banco de Dados**: Tabelas criadas no Azure SQL Database 
-- ✅ Buscar por ID 
+✅ **Banco de Dados**: Tabelas criadas no Azure SQL Database
+- ✅ Buscar por ID

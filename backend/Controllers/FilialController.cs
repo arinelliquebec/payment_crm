@@ -37,28 +37,28 @@ namespace CrmArrighi.Controllers
                     {
                         Id = 1,
                         Nome = "São Paulo - Centro",
-                        DataInclusao = DateTime.Now.AddDays(-60),
+                        DataInclusao = DateTime.UtcNow.AddDays(-60),
                         UsuarioImportacao = "admin"
                     },
                     new Filial
                     {
                         Id = 2,
                         Nome = "Rio de Janeiro - Copacabana",
-                        DataInclusao = DateTime.Now.AddDays(-45),
+                        DataInclusao = DateTime.UtcNow.AddDays(-45),
                         UsuarioImportacao = "admin"
                     },
                     new Filial
                     {
                         Id = 3,
                         Nome = "Belo Horizonte - Centro",
-                        DataInclusao = DateTime.Now.AddDays(-30),
+                        DataInclusao = DateTime.UtcNow.AddDays(-30),
                         UsuarioImportacao = "admin"
                     },
                     new Filial
                     {
                         Id = 4,
                         Nome = "Salvador - Barra",
-                        DataInclusao = DateTime.Now.AddDays(-15),
+                        DataInclusao = DateTime.UtcNow.AddDays(-15),
                         UsuarioImportacao = "admin"
                     }
                 };

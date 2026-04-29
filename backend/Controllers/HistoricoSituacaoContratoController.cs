@@ -22,6 +22,9 @@ namespace CrmArrighi.Controllers
         {
             try
             {
+                // Simular operação assíncrona
+                await Task.Delay(1);
+                
                 // Mock data para desenvolvimento
                 var mockHistorico = new List<HistoricoSituacaoContrato>
                 {
@@ -62,8 +65,8 @@ namespace CrmArrighi.Controllers
                         SituacaoAnterior = "Leed",
                         NovaSituacao = "Prospecto",
                         MotivoMudanca = "Cliente demonstrou interesse após apresentação",
-                        DataMudanca = DateTime.Now.AddDays(-5),
-                        DataCadastro = DateTime.Now.AddDays(-5)
+                        DataMudanca = DateTime.UtcNow.AddDays(-5),
+                        DataCadastro = DateTime.UtcNow.AddDays(-5)
                     },
                     new HistoricoSituacaoContrato
                     {
@@ -102,8 +105,8 @@ namespace CrmArrighi.Controllers
                         SituacaoAnterior = "Prospecto",
                         NovaSituacao = "Contrato Enviado",
                         MotivoMudanca = "Proposta enviada para análise",
-                        DataMudanca = DateTime.Now.AddDays(-3),
-                        DataCadastro = DateTime.Now.AddDays(-3)
+                        DataMudanca = DateTime.UtcNow.AddDays(-3),
+                        DataCadastro = DateTime.UtcNow.AddDays(-3)
                     },
                     new HistoricoSituacaoContrato
                     {
@@ -142,8 +145,8 @@ namespace CrmArrighi.Controllers
                         SituacaoAnterior = "Contrato Enviado",
                         NovaSituacao = "Contrato Assinado",
                         MotivoMudanca = "Contrato assinado e finalizado",
-                        DataMudanca = DateTime.Now.AddDays(-1),
-                        DataCadastro = DateTime.Now.AddDays(-1)
+                        DataMudanca = DateTime.UtcNow.AddDays(-1),
+                        DataCadastro = DateTime.UtcNow.AddDays(-1)
                     }
                 };
 
@@ -199,8 +202,8 @@ namespace CrmArrighi.Controllers
                     SituacaoAnterior = "Leed",
                     NovaSituacao = "Prospecto",
                     MotivoMudanca = "Cliente demonstrou interesse após apresentação",
-                    DataMudanca = DateTime.Now.AddDays(-5),
-                    DataCadastro = DateTime.Now.AddDays(-5)
+                    DataMudanca = DateTime.UtcNow.AddDays(-5),
+                    DataCadastro = DateTime.UtcNow.AddDays(-5)
                 };
 
                 return Ok(mockHistorico);
@@ -302,8 +305,8 @@ namespace CrmArrighi.Controllers
                     SituacaoAnterior = historicoDTO.SituacaoAnterior,
                     NovaSituacao = historicoDTO.NovaSituacao,
                     MotivoMudanca = historicoDTO.MotivoMudanca,
-                    DataMudanca = DateTime.Now,
-                    DataCadastro = DateTime.Now,
+                    DataMudanca = DateTime.UtcNow,
+                    DataCadastro = DateTime.UtcNow,
                     Contrato = contrato
                 };
 

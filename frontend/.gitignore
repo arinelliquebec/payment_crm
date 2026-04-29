@@ -1,16 +1,20 @@
-# Dependências
+# Dependencies
 node_modules/
 .pnpm-store/
 .npm/
 .yarn/
 
-# Build outputs
+# Next.js build outputs
 .next/
 out/
 dist/
 build/
+
+# Coverage and test outputs
 coverage/
 .nyc_output/
+test-results/
+playwright-report/
 
 # Cache
 .turbo/
@@ -18,7 +22,7 @@ coverage/
 .parcel-cache/
 *.tsbuildinfo
 
-# Variáveis de ambiente
+# Environment files and secrets
 .env
 .env.*
 !.env.example
@@ -27,17 +31,19 @@ coverage/
 # Deploy
 .vercel/
 
-# Logs e sistema
+# Logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# OS files
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Temporários
+# Temporary files
 tmp/
 temp/
 *.tmp

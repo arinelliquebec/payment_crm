@@ -1,0 +1,252 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using CrmArrighi.Data;
+using CrmArrighi.Models;
+using CrmArrighi.Utils;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+
+namespace CrmArrighi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class SessaoAtivaController : ControllerBase
+    {
+        private readonly CrmArrighiContext _context;
+        private readonly ILogger<SessaoAtivaController> _logger;
+
+        public SessaoAtivaController(CrmArrighiContext context, ILogger<SessaoAtivaController> logger)
+        {
+            _context = context;
+            _logger = logger;
+        }
+
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<object>>> GetSessoesAtivas()
+        {
+            try
+            {
+                // Busca sessões ativas com informações do usuário
+                var sessoes = await _context.SessoesAtivas
+                    .Where(s => s.Ativa)
+                    .Include(s => s.Usuario)
+                    .OrderByDescending(s => s.UltimaAtividade)
+                    .Select(s => new
+                    {
+                        Id = s.Id,
+                        UsuarioId = s.UsuarioId,
+                        NomeUsuario = s.NomeUsuario,
+                        Email = s.Email,
+                        UltimoAcesso = s.Usuario != null && s.Usuario.UltimoAcesso.HasValue ? TimeZoneHelper.ConvertToBrasiliaTime(s.Usuario.UltimoAcesso.Value) : (DateTime?)null,
+                        Perfil = s.Perfil,
+                        InicioSessao = s.InicioSessao,
+                        UltimaAtividade = s.UltimaAtividade,
+                        EnderecoIP = s.EnderecoIP,
+                        TempoOnline = DateTime.UtcNow.Subtract(s.InicioSessao).ToString(@"hh\:mm\:ss")
+                    })
+                    .ToListAsync();
+
+                _logger.LogInformation($"Encontradas {sessoes.Count} sessões ativas");
+
+                return Ok(sessoes);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Erro ao buscar sessões ativas: {ex.Message}");
+                _logger.LogError($"Stack trace: {ex.StackTrace}");
+                return StatusCode(500, "Erro ao buscar sessões ativas");
+            }
+        }
+
+        [HttpPost("registrar")]
+        public async Task<ActionResult<SessaoAtiva>> RegistrarSessao([FromBody] RegistrarSessaoRequest request)
+        {
+            try
+            {
+                _logger.LogInformation($"Registrando sessão para usuário {request.NomeUsuario} (ID: {request.UsuarioId})");
+
+                // Remove sessões antigas do mesmo usuário
+                var sessoesAntigas = await _context.SessoesAtivas
+                    .Where(s => s.UsuarioId == request.UsuarioId)
+                    .ToListAsync();
+
+                _logger.LogInformation($"Removendo {sessoesAntigas.Count} sessões antigas do usuário {request.UsuarioId}");
+
+                if (sessoesAntigas.Any())
+                {
+                    _context.SessoesAtivas.RemoveRange(sessoesAntigas);
+                }
+
+                // Cria nova sessão
+                var novaSessao = new SessaoAtiva
+                {
+                    UsuarioId = request.UsuarioId,
+                    NomeUsuario = request.NomeUsuario,
+                    Email = request.Email,
+                    Perfil = request.Perfil,
+                    InicioSessao = DateTime.UtcNow,
+                    UltimaAtividade = DateTime.UtcNow,
+                    EnderecoIP = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "",
+                    UserAgent = Request.Headers["User-Agent"].ToString(),
+                    TokenSessao = request.TokenSessao,
+                    Ativa = true
+                };
+
+                _context.SessoesAtivas.Add(novaSessao);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation($"Sessão registrada com sucesso para usuário {request.NomeUsuario} (ID: {request.UsuarioId}), sessão ID: {novaSessao.Id}");
+
+                return Ok(novaSessao);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Erro ao registrar sessão: {ex.Message}");
+                return StatusCode(500, "Erro ao registrar sessão");
+            }
+        }
+
+        [HttpPut("atualizar/{usuarioId}")]
+        public async Task<IActionResult> AtualizarAtividade(int usuarioId)
+        {
+            try
+            {
+                var sessao = await _context.SessoesAtivas
+                    .FirstOrDefaultAsync(s => s.UsuarioId == usuarioId && s.Ativa);
+
+                if (sessao == null)
+                {
+                    return NotFound("Sessão não encontrada");
+                }
+
+                sessao.UltimaAtividade = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return Ok();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Erro ao atualizar atividade: {ex.Message}");
+                return StatusCode(500, "Erro ao atualizar atividade");
+            }
+        }
+
+        [HttpDelete("remover/{usuarioId}")]
+        public async Task<IActionResult> RemoverSessao(int usuarioId)
+        {
+            try
+            {
+                var sessao = await _context.SessoesAtivas
+                    .FirstOrDefaultAsync(s => s.UsuarioId == usuarioId);
+
+                if (sessao != null)
+                {
+                    _context.SessoesAtivas.Remove(sessao);
+                    await _context.SaveChangesAsync();
+                    _logger.LogInformation($"Sessão removida para usuário ID: {usuarioId}");
+                }
+
+                return Ok();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Erro ao remover sessão: {ex.Message}");
+                return StatusCode(500, "Erro ao remover sessão");
+            }
+        }
+
+        [HttpGet("count")]
+        public async Task<ActionResult<int>> GetContagemSessoesAtivas()
+        {
+            try
+            {
+                // Remove sessões inativas
+                var tempoLimite = DateTime.UtcNow.AddMinutes(-30);
+                var sessoesInativas = await _context.SessoesAtivas
+                    .Where(s => s.UltimaAtividade < tempoLimite)
+                    .ToListAsync();
+
+                if (sessoesInativas.Any())
+                {
+                    _context.SessoesAtivas.RemoveRange(sessoesInativas);
+                    await _context.SaveChangesAsync();
+                }
+
+                var count = await _context.SessoesAtivas
+                    .Where(s => s.Ativa)
+                    .CountAsync();
+
+                _logger.LogInformation($"Contagem de sessões ativas: {count}");
+
+                return Ok(count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Erro ao contar sessões ativas: {ex.Message}");
+                return StatusCode(500, "Erro ao contar sessões ativas");
+            }
+        }
+
+        [HttpGet("diagnostico")]
+        public async Task<ActionResult<object>> GetDiagnostico()
+        {
+            try
+            {
+                var todasSessoes = await _context.SessoesAtivas.ToListAsync();
+                var sessoesAtivas = await _context.SessoesAtivas.Where(s => s.Ativa).ToListAsync();
+
+                return Ok(new
+                {
+                    TotalSessoes = todasSessoes.Count,
+                    SessoesAtivas = sessoesAtivas.Count,
+                    Sessoes = sessoesAtivas.Select(s => new
+                    {
+                        Id = s.Id,
+                        UsuarioId = s.UsuarioId,
+                        NomeUsuario = s.NomeUsuario,
+                        Email = s.Email,
+                        Perfil = s.Perfil,
+                        InicioSessao = s.InicioSessao,
+                        UltimaAtividade = s.UltimaAtividade,
+                        TempoOnline = DateTime.UtcNow.Subtract(s.InicioSessao).ToString(@"hh\:mm\:ss"),
+                        Ativa = s.Ativa
+                    })
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Erro no diagnóstico: {ex.Message}");
+                return StatusCode(500, "Erro no diagnóstico");
+            }
+        }
+
+        private string CalcularTempoOnline(DateTime inicioSessao)
+        {
+            var tempo = DateTime.Now - inicioSessao;
+
+            if (tempo.TotalDays >= 1)
+            {
+                return $"{(int)tempo.TotalDays}d {tempo.Hours}h";
+            }
+            else if (tempo.TotalHours >= 1)
+            {
+                return $"{(int)tempo.TotalHours}h {tempo.Minutes}m";
+            }
+            else
+            {
+                return $"{tempo.Minutes}m";
+            }
+        }
+    }
+
+    public class RegistrarSessaoRequest
+    {
+        public int UsuarioId { get; set; }
+        public string NomeUsuario { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Perfil { get; set; } = string.Empty;
+        public string TokenSessao { get; set; } = string.Empty;
+    }
+}

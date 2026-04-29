@@ -57,6 +57,7 @@ interface FormData {
     cep: string;
     numero: string;
     complemento: string;
+    estado: string;
   };
 }
 
@@ -88,6 +89,7 @@ const initialFormData: FormData = {
     cep: "",
     numero: "",
     complemento: "",
+    estado: "",
   },
 };
 
@@ -137,13 +139,13 @@ const InputField = memo(
             "absolute left-4 transition-all duration-300 pointer-events-none z-10",
             "text-sm font-medium",
             isFocused || value
-              ? "-top-2 text-xs bg-white px-2 rounded-full"
-              : "top-4 text-secondary-500",
-            isFocused ? "text-green-600" : "text-secondary-500",
-            error && "text-red-500"
+              ? "-top-2 text-xs bg-neutral-800 px-2 rounded-full border border-neutral-700/50"
+              : "top-4 text-neutral-500",
+            isFocused ? "text-amber-400" : "text-neutral-400",
+            error && "text-red-400"
           )}
         >
-          {label} {required && <span className="text-red-500">*</span>}
+          {label} {required && <span className="text-red-400">*</span>}
         </label>
 
         <div className="relative">
@@ -151,8 +153,8 @@ const InputField = memo(
             <div
               className={cn(
                 "absolute left-4 top-1/2 -translate-y-1/2 transition-all duration-300",
-                isFocused ? "text-green-600 scale-110" : "text-secondary-400",
-                error && "text-red-500"
+                isFocused ? "text-amber-400 scale-110" : "text-neutral-500",
+                error && "text-red-400"
               )}
             >
               {icon}
@@ -170,26 +172,28 @@ const InputField = memo(
                 onFocus={() => setIsFocused(true)}
                 onBlur={() => setIsFocused(false)}
                 className={cn(
-                  "w-full h-14 px-4 bg-white/80 backdrop-blur-sm rounded-2xl",
+                  "w-full h-14 px-4 bg-neutral-900/95 backdrop-blur-sm rounded-2xl",
                   "border-2 transition-all duration-300",
                   "focus:outline-none focus:ring-4",
+                  "text-neutral-200",
                   icon && "pl-12",
                   isFocused
-                    ? "border-green-500 ring-green-500/20 shadow-lg shadow-green-500/10"
-                    : "border-secondary-200 hover:border-secondary-300 hover:shadow-md",
+                    ? "border-amber-500/50 ring-amber-500/20 shadow-lg shadow-amber-500/10"
+                    : "border-neutral-700/30 hover:border-neutral-600/50 hover:shadow-md",
                   error && "border-red-500 focus:ring-red-500/20",
-                  "appearance-none cursor-pointer"
+                  "appearance-none cursor-pointer",
+                  "[&>option]:bg-neutral-900 [&>option]:text-neutral-200"
                 )}
                 required={required}
               >
-                <option value=""></option>
+                <option value="" className="text-neutral-500"></option>
                 {options.map((option) => (
-                  <option key={option.value} value={option.value}>
+                  <option key={option.value} value={option.value} className="bg-neutral-900 text-neutral-200">
                     {option.label}
                   </option>
                 ))}
               </select>
-              <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-400 pointer-events-none rotate-90" />
+              <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500 pointer-events-none rotate-90" />
             </div>
           ) : (
             <input
@@ -203,15 +207,15 @@ const InputField = memo(
               onBlur={() => setIsFocused(false)}
               placeholder={type === "date" ? "" : placeholder}
               className={cn(
-                "w-full h-14 px-4 bg-white/80 backdrop-blur-sm rounded-2xl",
+                "w-full h-14 px-4 bg-neutral-900/95 backdrop-blur-sm rounded-2xl",
                 "border-2 transition-all duration-300",
                 "focus:outline-none focus:ring-4",
-                "placeholder:text-transparent",
+                "placeholder:text-transparent text-neutral-100 font-medium",
                 icon && "pl-12",
 
                 isFocused
-                  ? "border-green-500 ring-green-500/20 shadow-lg shadow-green-500/10"
-                  : "border-secondary-200 hover:border-secondary-300 hover:shadow-md",
+                  ? "border-amber-500/50 ring-amber-500/20 shadow-lg shadow-amber-500/10"
+                  : "border-neutral-700/30 hover:border-neutral-600/50 hover:shadow-md",
                 error && "border-red-500 focus:ring-red-500/20"
               )}
               required={required}
@@ -239,7 +243,7 @@ const InputField = memo(
           <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="text-xs text-secondary-500 mt-2 px-4"
+            className="text-xs text-neutral-400 mt-2 px-4"
           >
             {description}
           </motion.p>
@@ -254,8 +258,8 @@ const InputField = memo(
               exit={{ opacity: 0, y: -10, height: 0 }}
               className="flex items-center gap-2 mt-2 px-4 overflow-hidden"
             >
-              <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-              <p className="text-sm text-red-600">{error}</p>
+              <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+              <p className="text-sm text-red-400">{error}</p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -288,24 +292,24 @@ const FormSection = ({
     className="relative"
   >
     {/* Efeito de gradiente de fundo */}
-    <div className="absolute inset-0 bg-gradient-to-br from-green-500/10 via-green-400/5 to-transparent rounded-3xl blur-2xl" />
+    <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-amber-400/5 to-transparent rounded-3xl blur-2xl" />
 
     {/* Card principal com glassmorphism */}
-    <div className="relative bg-white/60 backdrop-blur-xl rounded-3xl p-8 border border-white/50 shadow-2xl hover:shadow-3xl transition-all duration-500">
+    <div className="relative bg-neutral-900/30 backdrop-blur-xl rounded-3xl p-8 border border-neutral-700/30 shadow-2xl hover:shadow-3xl transition-all duration-500">
       {/* Header da seção */}
       <div className="flex items-start justify-between mb-8">
         <div className="flex items-center gap-4">
           <motion.div
             whileHover={{ rotate: 360, scale: 1.1 }}
             transition={{ duration: 0.8 }}
-            className="p-3 bg-gradient-to-br from-green-500 to-green-600 rounded-2xl text-white shadow-lg shadow-green-500/30"
+            className="p-3 bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl text-neutral-900 shadow-lg shadow-amber-500/30"
           >
             {icon}
           </motion.div>
           <div>
-            <h3 className="text-xl font-bold text-secondary-900">{title}</h3>
+            <h3 className="text-xl font-bold text-neutral-100">{title}</h3>
             {description && (
-              <p className="text-sm text-secondary-600 mt-1">{description}</p>
+              <p className="text-sm text-neutral-400 mt-1">{description}</p>
             )}
           </div>
         </div>
@@ -345,6 +349,7 @@ export default function PessoaJuridicaForm({
           cep: initialData.endereco.cep || "",
           numero: initialData.endereco.numero || "",
           complemento: initialData.endereco.complemento || "",
+          estado: initialData.endereco.estado || "",
         } : {
           cidade: "",
           bairro: "",
@@ -352,6 +357,7 @@ export default function PessoaJuridicaForm({
           cep: "",
           numero: "",
           complemento: "",
+          estado: "",
         },
       });
     }
@@ -472,6 +478,7 @@ export default function PessoaJuridicaForm({
               logradouro: cepData.logradouro,
               bairro: cepData.bairro,
               cidade: cepData.cidade,
+              estado: cepData.estado,
               numero: prev.endereco.numero,
               complemento: cepData.complemento || prev.endereco.complemento,
             },
@@ -560,6 +567,7 @@ export default function PessoaJuridicaForm({
         cep: formData.endereco.cep,
         numero: formData.endereco.numero,
         complemento: formData.endereco.complemento || undefined,
+        estado: formData.endereco.estado,
       },
     };
 
@@ -600,19 +608,19 @@ export default function PessoaJuridicaForm({
       className="mb-8"
     >
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-medium text-secondary-600">
+        <span className="text-sm font-medium text-neutral-400">
           Progresso do formulário
         </span>
-        <span className="text-sm font-bold text-green-600">
+        <span className="text-sm font-bold text-amber-400">
           {Math.round(formProgress)}%
         </span>
       </div>
-      <div className="h-2 bg-secondary-200 rounded-full overflow-hidden">
+      <div className="h-2 bg-neutral-800 rounded-full overflow-hidden">
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${formProgress}%` }}
           transition={{ duration: 0.5, ease: "easeOut" }}
-          className="h-full bg-gradient-to-r from-green-500 to-green-600 rounded-full"
+          className="h-full bg-gradient-to-r from-amber-500 to-amber-600 rounded-full"
         />
       </div>
     </motion.div>
@@ -624,7 +632,7 @@ export default function PessoaJuridicaForm({
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.9 }}
       transition={{ duration: 0.5 }}
-      className="bg-gradient-to-br from-green-50 via-white to-secondary-50 rounded-3xl p-8 shadow-2xl backdrop-blur-xl"
+      className="bg-neutral-900/95 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-neutral-800"
     >
       {/* Header Corporativo */}
       <div className="flex items-center justify-between mb-8">
@@ -637,15 +645,15 @@ export default function PessoaJuridicaForm({
           <motion.div
             whileHover={{ rotate: 360 }}
             transition={{ duration: 0.8 }}
-            className="p-4 bg-gradient-to-br from-green-500 to-green-600 rounded-2xl text-white shadow-xl shadow-green-500/30"
+            className="p-4 bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl text-neutral-900 shadow-xl shadow-amber-500/30"
           >
             <Building2 className="w-8 h-8" />
           </motion.div>
           <div>
-            <h2 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-green-800 bg-clip-text text-transparent">
+            <h2 className="text-3xl font-bold bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent">
               {initialData ? "Editar Pessoa Jurídica" : "Nova Pessoa Jurídica"}
             </h2>
-            <p className="text-secondary-600 mt-1">
+            <p className="text-neutral-400 mt-1">
               Cadastro empresarial completo e seguro
             </p>
           </div>
@@ -655,7 +663,7 @@ export default function PessoaJuridicaForm({
           whileHover={{ scale: 1.1, rotate: 90 }}
           whileTap={{ scale: 0.9 }}
           onClick={onCancel}
-          className="p-3 text-secondary-400 hover:text-red-600 hover:bg-red-50 rounded-2xl transition-all duration-300"
+          className="p-3 text-neutral-400 hover:text-red-400 hover:bg-red-500/10 rounded-2xl transition-all duration-300 border border-transparent hover:border-red-500/30"
         >
           <X className="w-6 h-6" />
         </motion.button>
@@ -705,7 +713,7 @@ export default function PessoaJuridicaForm({
               description="Cadastro Nacional da Pessoa Jurídica"
             />
             <InputField
-              label="Responsável Técnico"
+              label="Representante Legal"
               name="responsavelTecnicoId"
               options={responsavelOptions}
               required
@@ -837,6 +845,17 @@ export default function PessoaJuridicaForm({
               error={errors["endereco.cidade"]}
               icon={<Building className="w-5 h-5" />}
             />
+            <InputField
+              label="Estado"
+              name="estado"
+              isEndereco
+              required
+              value={formData.endereco.estado}
+              onChange={(value) => handleFieldChange("estado", value, true)}
+              error={errors["endereco.estado"]}
+              icon={<MapPin className="w-5 h-5" />}
+              placeholder="UF"
+            />
           </div>
         </FormSection>
 
@@ -848,7 +867,7 @@ export default function PessoaJuridicaForm({
           className="flex justify-between items-center pt-8"
         >
           {/* Informação adicional */}
-          <div className="flex items-center gap-2 text-sm text-secondary-500">
+          <div className="flex items-center gap-2 text-sm text-neutral-400">
             <Shield className="w-4 h-4" />
             <span>Dados protegidos e criptografados</span>
           </div>
@@ -860,7 +879,7 @@ export default function PessoaJuridicaForm({
               onClick={onCancel}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              className="px-8 py-4 text-secondary-700 bg-white border-2 border-secondary-300 rounded-2xl hover:bg-secondary-50 hover:border-secondary-400 transition-all duration-300 font-semibold shadow-lg hover:shadow-xl"
+              className="px-8 py-4 text-neutral-300 bg-neutral-800/50 border-2 border-neutral-700 rounded-2xl hover:bg-neutral-800 hover:border-neutral-600 transition-all duration-300 font-semibold shadow-lg hover:shadow-xl"
             >
               Cancelar
             </motion.button>
@@ -870,9 +889,9 @@ export default function PessoaJuridicaForm({
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               className={cn(
-                "px-8 py-4 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-2xl",
-                "hover:from-green-700 hover:to-green-800 disabled:opacity-50 disabled:cursor-not-allowed",
-                "transition-all duration-300 font-semibold shadow-xl hover:shadow-2xl",
+                "px-8 py-4 bg-gradient-to-r from-amber-500 to-amber-600 text-neutral-900 rounded-2xl",
+                "hover:from-amber-600 hover:to-amber-700 disabled:opacity-50 disabled:cursor-not-allowed",
+                "transition-all duration-300 font-semibold shadow-xl hover:shadow-2xl shadow-amber-500/30",
                 "flex items-center gap-3 min-w-[180px] justify-center"
               )}
             >

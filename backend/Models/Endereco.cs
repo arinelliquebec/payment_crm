@@ -10,6 +10,9 @@ namespace CrmArrighi.Models
         [StringLength(100, ErrorMessage = "A cidade deve ter no máximo 100 caracteres")]
         public string Cidade { get; set; } = string.Empty;
 
+        [StringLength(2, MinimumLength = 2, ErrorMessage = "O estado (UF) deve ter 2 caracteres")]
+        public string? Estado { get; set; }
+
         [Required(ErrorMessage = "O bairro é obrigatório")]
         [StringLength(100, ErrorMessage = "O bairro deve ter no máximo 100 caracteres")]
         public string Bairro { get; set; } = string.Empty;

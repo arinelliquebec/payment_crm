@@ -20,7 +20,7 @@ namespace CrmArrighi.Models
 
         [Required(ErrorMessage = "A situação é obrigatória")]
         [StringLength(50, ErrorMessage = "A situação deve ter no máximo 50 caracteres")]
-        public string Situacao { get; set; } = string.Empty; // Leed, Prospecto, Contrato Enviado, Contrato Assinado, Retornar, Sem Interesse
+        public string Situacao { get; set; } = string.Empty; // Leed, Prospecto, Contrato Enviado, Contrato Assinado, Quitado, Retornar, Sem Interesse
 
         public DateTime? DataUltimoContato { get; set; }
         public DateTime? DataProximoContato { get; set; }
@@ -42,6 +42,7 @@ namespace CrmArrighi.Models
         [StringLength(200, ErrorMessage = "O tipo de serviço deve ter no máximo 200 caracteres")]
         public string? TipoServico { get; set; }
 
+        [StringLength(1000, ErrorMessage = "O campo 'Objeto do Contrato' deve ter no máximo 1000 caracteres")]
         public string? ObjetoContrato { get; set; }
 
         [Column(TypeName = "decimal(18,2)")]
@@ -59,7 +60,14 @@ namespace CrmArrighi.Models
 
         public string? AnexoDocumento { get; set; }
 
+        [StringLength(2000, ErrorMessage = "O campo 'Pendências' deve ter no máximo 2000 caracteres")]
         public string? Pendencias { get; set; }
+
+        /// <summary>
+        /// Método de pagamento do contrato: "Boleto" (padrão) ou "Pix"
+        /// </summary>
+        [StringLength(20, ErrorMessage = "Método de pagamento deve ter no máximo 20 caracteres")]
+        public string MetodoPagamento { get; set; } = "Boleto";
 
         public DateTime DataCadastro { get; set; } = DateTime.Now;
         public DateTime? DataAtualizacao { get; set; }

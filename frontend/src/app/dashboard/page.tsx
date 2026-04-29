@@ -2,14 +2,14 @@
 "use client";
 
 import MainLayout from "@/components/MainLayout";
-import Dashboard from "@/components/Dashboard";
+import DashboardMUI from "@/components/DashboardMUI";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
 export default function DashboardPage() {
   return (
     <ProtectedRoute>
       <MainLayout>
-        <Dashboard />
+        <DashboardMUI />
       </MainLayout>
     </ProtectedRoute>
   );

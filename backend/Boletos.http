@@ -1,0 +1,221 @@
+### Arquivo de testes para API de Boletos
+### Base URL
+@baseUrl = https://localhost:7001/api
+
+### 1. Listar todos os boletos
+GET {{baseUrl}}/Boleto
+Accept: application/json
+
+###
+
+### 2. Buscar boleto por ID
+GET {{baseUrl}}/Boleto/1
+Accept: application/json
+
+###
+
+### 3. Buscar boletos por contrato
+GET {{baseUrl}}/Boleto/contrato/1
+Accept: application/json
+
+###
+
+### 4. Criar novo boleto
+POST {{baseUrl}}/Boleto
+Content-Type: application/json
+
+{
+  "contratoId": 1,
+  "dueDate": "2024-02-15",
+  "nominalValue": 1500.00,
+  "clientNumber": "CONT-1",
+  "finePercentage": 2.00,
+  "fineQuantityDays": 1,
+  "interestPercentage": 1.00,
+  "deductionValue": 0.00,
+  "writeOffQuantityDays": 30,
+  "messages": [
+    "Pagamento referente ao contrato de serviços",
+    "Em caso de dúvidas, entre em contato"
+  ],
+  "pixKeyType": "EMAIL",
+  "pixKey": "financeiro@arrighi.com.br",
+  "discount": {
+    "type": "VALOR_DATA_FIXA",
+    "discountOne": {
+      "value": 50.00,
+      "limitDate": "2024-02-10"
+    },
+    "discountTwo": {
+      "value": 25.00,
+      "limitDate": "2024-02-13"
+    }
+  }
+}
+
+###
+
+### 5. Criar boleto simples (valores mínimos)
+POST {{baseUrl}}/Boleto
+Content-Type: application/json
+
+{
+  "contratoId": 1,
+  "dueDate": "2024-02-20",
+  "nominalValue": 500.00
+}
+
+###
+
+### 6. Sincronizar boleto com API Santander
+PUT {{baseUrl}}/Boleto/1/sincronizar
+Accept: application/json
+
+###
+
+### 7. Dashboard de boletos
+GET {{baseUrl}}/Boleto/dashboard
+Accept: application/json
+
+###
+
+### 8. Cancelar boleto
+DELETE {{baseUrl}}/Boleto/1
+
+###
+
+### 9. Criar boleto com desconto percentual
+POST {{baseUrl}}/Boleto
+Content-Type: application/json
+
+{
+  "contratoId": 2,
+  "dueDate": "2024-03-01",
+  "nominalValue": 2000.00,
+  "clientNumber": "CONT-2",
+  "finePercentage": 2.50,
+  "fineQuantityDays": 2,
+  "interestPercentage": 1.50,
+  "messages": [
+    "Boleto com desconto progressivo",
+    "Aproveite o desconto para pagamento antecipado"
+  ],
+  "discount": {
+    "type": "PERCENTUAL_DATA_FIXA",
+    "discountOne": {
+      "value": 5.00,
+      "limitDate": "2024-02-25"
+    },
+    "discountTwo": {
+      "value": 3.00,
+      "limitDate": "2024-02-28"
+    }
+  }
+}
+
+###
+
+### 10. Teste com PIX - Chave CPF
+POST {{baseUrl}}/Boleto
+Content-Type: application/json
+
+{
+  "contratoId": 1,
+  "dueDate": "2024-02-25",
+  "nominalValue": 750.00,
+  "pixKeyType": "CPF",
+  "pixKey": "12345678901",
+  "txId": "ARRIGHI2024001"
+}
+
+###
+
+### 11. Teste com PIX - Chave Telefone
+POST {{baseUrl}}/Boleto
+Content-Type: application/json
+
+{
+  "contratoId": 1,
+  "dueDate": "2024-02-28",
+  "nominalValue": 1200.00,
+  "pixKeyType": "TELEFONE",
+  "pixKey": "+5511999999999"
+}
+
+###
+
+### 12. Boleto com valor alto e múltiplos descontos
+POST {{baseUrl}}/Boleto
+Content-Type: application/json
+
+{
+  "contratoId": 3,
+  "dueDate": "2024-03-15",
+  "nominalValue": 5000.00,
+  "clientNumber": "CONT-3",
+  "finePercentage": 2.00,
+  "fineQuantityDays": 1,
+  "interestPercentage": 1.00,
+  "deductionValue": 100.00,
+  "writeOffQuantityDays": 60,
+  "messages": [
+    "Boleto Premium - Serviços Especializados",
+    "Desconto progressivo disponível",
+    "Contato: (11) 9999-9999"
+  ],
+  "pixKeyType": "EMAIL",
+  "pixKey": "premium@arrighi.com.br",
+  "discount": {
+    "type": "VALOR_DATA_FIXA",
+    "discountOne": {
+      "value": 250.00,
+      "limitDate": "2024-03-01"
+    },
+    "discountTwo": {
+      "value": 150.00,
+      "limitDate": "2024-03-08"
+    },
+    "discountThree": {
+      "value": 75.00,
+      "limitDate": "2024-03-12"
+    }
+  }
+}
+
+###
+
+### 13. Teste de erro - Contrato inexistente
+POST {{baseUrl}}/Boleto
+Content-Type: application/json
+
+{
+  "contratoId": 99999,
+  "dueDate": "2024-02-15",
+  "nominalValue": 100.00
+}
+
+###
+
+### 14. Teste de validação - Valor inválido
+POST {{baseUrl}}/Boleto
+Content-Type: application/json
+
+{
+  "contratoId": 1,
+  "dueDate": "2024-02-15",
+  "nominalValue": 0
+}
+
+###
+
+### 15. Teste de validação - Data vencimento no passado
+POST {{baseUrl}}/Boleto
+Content-Type: application/json
+
+{
+  "contratoId": 1,
+  "dueDate": "2023-01-01",
+  "nominalValue": 100.00
+}
+
+###

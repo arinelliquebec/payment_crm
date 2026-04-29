@@ -81,7 +81,7 @@ export default function AtribuirClienteForm({
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className="bg-white rounded-2xl shadow-xl max-w-2xl w-full mx-auto"
+      className="bg-neutral-900/95 rounded-2xl shadow-xl max-w-2xl w-full mx-auto"
     >
       <div className="flex items-center justify-between p-6 border-b border-secondary-200">
         <div className="flex items-center space-x-3">

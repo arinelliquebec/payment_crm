@@ -3,10 +3,12 @@ using Microsoft.EntityFrameworkCore;
 using CrmArrighi.Data;
 using CrmArrighi.Models;
 
+// Última atualização: 08/10/2025
+// Correção: Ordenação por ID ao invés de PessoaFisica.Nome para evitar erros no deploy
 namespace CrmArrighi.Controllers
 {
-    [Route("api/[controller]")]
     [ApiController]
+    [Route("api/[controller]")]
     public class ConsultorController : ControllerBase
     {
         private readonly CrmArrighiContext _context;
@@ -16,370 +18,424 @@ namespace CrmArrighi.Controllers
             _context = context;
         }
 
+        // GET: api/Consultor/count - Contar total de consultores (apenas ativos)
+        [HttpGet("count")]
+        public async Task<ActionResult<int>> GetConsultoresCount()
+        {
+            try
+            {
+                var count = await _context.Consultores.CountAsync(c => c.Ativo);
+                Console.WriteLine($"📊 GetConsultoresCount: Total de {count} consultores");
+                return Ok(count);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ GetConsultoresCount: Erro: {ex.Message}");
+                return StatusCode(500, new { message = "Erro ao contar consultores" });
+            }
+        }
+
+        // GET: api/Consultor/buscar?termo=xxx&limit=50
+        [HttpGet("buscar")]
+        public async Task<ActionResult<IEnumerable<Consultor>>> BuscarConsultores([FromQuery] string? termo, [FromQuery] int limit = 50)
+        {
+            try
+            {
+                Console.WriteLine($"🔍 BuscarConsultores: Buscando com termo: {termo}, limit: {limit}");
+
+                IQueryable<Consultor> query = _context.Consultores
+                    .Where(c => c.Ativo)
+                    .Include(c => c.PessoaFisica)
+                    .Include(c => c.Filial);
+
+                // Se houver termo de busca, aplicar filtros
+                if (!string.IsNullOrWhiteSpace(termo))
+                {
+                    var termoLower = termo.ToLower().Trim();
+                    query = query.Where(c =>
+                        (c.PessoaFisica != null && c.PessoaFisica.Nome != null && c.PessoaFisica.Nome.ToLower().Contains(termoLower)) ||
+                        (c.PessoaFisica != null && c.PessoaFisica.EmailEmpresarial != null && c.PessoaFisica.EmailEmpresarial.ToLower().Contains(termoLower)) ||
+                        (c.OAB != null && c.OAB.ToLower().Contains(termoLower)) ||
+                        (c.Filial != null && c.Filial.Nome != null && c.Filial.Nome.ToLower().Contains(termoLower))
+                    );
+                }
+
+                // Ordenar por ID para garantir consistência e performance
+                var consultores = await query
+                    .OrderBy(c => c.Id)
+                    .Take(limit)
+                    .ToListAsync();
+
+                Console.WriteLine($"✅ BuscarConsultores: Encontrados {consultores.Count} consultores");
+                return Ok(consultores);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ BuscarConsultores: Erro: {ex.Message}");
+                return StatusCode(500, $"Erro ao buscar consultores: {ex.Message}");
+            }
+        }
+
         // GET: api/Consultor
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Consultor>>> GetConsultores()
         {
             try
             {
+                Console.WriteLine("🔍 GetConsultores: Buscando consultores ativos");
+
+                // Buscar apenas consultores ativos (excluídos ficam com Ativo = false)
                 var consultores = await _context.Consultores
-                    .Include(c => c.PessoaFisica)
-                        .ThenInclude(pf => pf!.Endereco)
-                    .Include(c => c.Filial)
                     .Where(c => c.Ativo)
+                    .Include(c => c.PessoaFisica)
+                    .Include(c => c.Filial)
+                    .OrderBy(c => c.Id) // Ordenação simples por ID
                     .ToListAsync();
 
-                // Ordena alfabeticamente por nome
-                return consultores.OrderBy(c => c.PessoaFisica.Nome).ToList();
+                Console.WriteLine($"✅ GetConsultores: Retornando {consultores.Count} consultores");
+
+                // Log de verificação para debug
+                if (consultores.Any())
+                {
+                    var primeiro = consultores.First();
+                    Console.WriteLine($"📊 Exemplo de consultor: ID={primeiro.Id}, Ativo={primeiro.Ativo}, " +
+                                    $"PessoaFisica={primeiro.PessoaFisica?.Nome ?? "NULL"}");
+                }
+
+                return Ok(consultores);
             }
             catch (Exception ex)
             {
-                // Retorna dados mock quando o banco não está disponível
-                var mockData = new List<Consultor>
-                {
-                    new Consultor
-                    {
-                        Id = 1,
-                        PessoaFisicaId = 1,
-                        PessoaFisica = new PessoaFisica
-                        {
-                            Id = 1,
-                            Nome = "JOÃO SILVA",
-                            Cpf = "123.456.789-01",
-                            Email = "joao.silva@email.com",
-                            Telefone1 = "(11) 99999-1111",
-                            Endereco = new Endereco
-                            {
-                                Id = 1,
-                                Cidade = "São Paulo",
-                                Bairro = "Vila Madalena",
-                                Logradouro = "Rua Harmonia",
-                                Cep = "05435-000",
-                                Numero = "123"
-                            }
-                        },
-                        FilialId = 1,
-                        DataCadastro = DateTime.Now.AddDays(-60)
-                    },
-                    new Consultor
-                    {
-                        Id = 2,
-                        PessoaFisicaId = 2,
-                        PessoaFisica = new PessoaFisica
-                        {
-                            Id = 2,
-                            Nome = "MARIA SANTOS",
-                            Cpf = "234.567.890-12",
-                            Email = "maria.santos@email.com",
-                            Telefone1 = "(21) 99999-2222",
-                            Endereco = new Endereco
-                            {
-                                Id = 2,
-                                Cidade = "Rio de Janeiro",
-                                Bairro = "Copacabana",
-                                Logradouro = "Avenida Atlântica",
-                                Cep = "22070-010",
-                                Numero = "456"
-                            }
-                        },
-                        FilialId = 2,
-                        DataCadastro = DateTime.Now.AddDays(-45)
-                    }
-                };
-
-                return mockData.OrderBy(c => c.PessoaFisica.Nome).ToList();
+                Console.WriteLine($"❌ GetConsultores: Erro: {ex.Message}");
+                Console.WriteLine($"❌ StackTrace: {ex.StackTrace}");
+                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
             }
         }
 
-        // GET: api/Consultor/5
+        // GET: api/Consultor/{id}
         [HttpGet("{id}")]
         public async Task<ActionResult<Consultor>> GetConsultor(int id)
         {
-                            var consultor = await _context.Consultores
-                    .Include(c => c.PessoaFisica)
-                        .ThenInclude(pf => pf!.Endereco)
-                    .Include(c => c.Filial)
-                    .FirstOrDefaultAsync(c => c.Id == id && c.Ativo);
-
-            if (consultor == null)
+            try
             {
-                return NotFound();
-            }
+                var consultor = await _context.Consultores
+                    .Include(c => c.PessoaFisica)
+                        .ThenInclude(pf => pf.Endereco)  // ✅ Removido ! perigoso
+                    .Include(c => c.Filial)
+                    .FirstOrDefaultAsync(c => c.Id == id);
 
-            return consultor;
+                if (consultor == null || !consultor.Ativo)
+                {
+                    return NotFound(new {
+                        recurso = "Consultor",
+                        id = id,
+                        mensagem = $"Consultor #{id} não foi encontrado"
+                    });
+                }
+
+                return consultor;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ GetConsultor: Erro ao buscar consultor {id}: {ex.Message}");
+                return StatusCode(500, $"Erro interno ao buscar consultor: {ex.Message}");
+            }
         }
 
         // POST: api/Consultor
         [HttpPost]
-        public async Task<ActionResult<Consultor>> CreateConsultor(CreateConsultorDTO createConsultorDTO)
+        public async Task<ActionResult<Consultor>> CreateConsultor([FromBody] CreateConsultorDTO dto)
         {
             try
             {
-                // Validar se a pessoa física existe
-                var pessoaFisica = await _context.PessoasFisicas.FindAsync(createConsultorDTO.PessoaFisicaId);
+                Console.WriteLine($"🆕 CreateConsultor: Criando novo consultor");
+                Console.WriteLine($"   - PessoaFisicaId: {dto.PessoaFisicaId}");
+                Console.WriteLine($"   - FilialId: {dto.FilialId}");
+                Console.WriteLine($"   - OAB: {dto.OAB}");
+
+                // Validar dados obrigatórios (ModelState já valida via DataAnnotations)
+                if (!ModelState.IsValid)
+                {
+                    Console.WriteLine($"❌ CreateConsultor: ModelState inválido");
+                    return BadRequest(ModelState);
+                }
+
+                // Verificar se a pessoa física existe
+                var pessoaFisica = await _context.PessoasFisicas.FindAsync(dto.PessoaFisicaId);
                 if (pessoaFisica == null)
                 {
-                    return BadRequest("Pessoa física não encontrada");
+                    return BadRequest(new { message = "Pessoa física não encontrada" });
                 }
 
-                // Verificar se já existe um consultor para esta pessoa
+                // Verificar se a filial existe
+                var filial = await _context.Filiais.FindAsync(dto.FilialId);
+                if (filial == null)
+                {
+                    return BadRequest(new { message = "Filial não encontrada" });
+                }
+
+                // Verificar se já existe um consultor vinculado a esta pessoa física
                 var consultorExistente = await _context.Consultores
-                    .FirstOrDefaultAsync(c => c.PessoaFisicaId == createConsultorDTO.PessoaFisicaId && c.Ativo);
+                    .FirstOrDefaultAsync(c => c.PessoaFisicaId == dto.PessoaFisicaId);
                 if (consultorExistente != null)
                 {
-                    return BadRequest("Já existe um consultor cadastrado para esta pessoa física");
+                    return BadRequest(new { message = "Já existe um consultor vinculado a esta pessoa física" });
                 }
 
+                // Criar o consultor a partir do DTO
                 var consultor = new Consultor
                 {
-                    PessoaFisicaId = createConsultorDTO.PessoaFisicaId,
-                    FilialId = createConsultorDTO.FilialId,
-                    OAB = createConsultorDTO.OAB,
-                    DataCadastro = DateTime.Now,
-                    Ativo = true
+                    PessoaFisicaId = dto.PessoaFisicaId,
+                    FilialId = dto.FilialId,
+                    OAB = dto.OAB,
+                    Ativo = true,
+                    DataCadastro = DateTime.UtcNow,
+                    DataAtualizacao = DateTime.UtcNow
                 };
 
                 _context.Consultores.Add(consultor);
                 await _context.SaveChangesAsync();
 
-                // Retornar o consultor com os dados da pessoa
-                return await GetConsultor(consultor.Id);
+                // Buscar o consultor criado com os includes
+                var consultorCriado = await _context.Consultores
+                    .Include(c => c.PessoaFisica)
+                    .Include(c => c.Filial)
+                    .FirstOrDefaultAsync(c => c.Id == consultor.Id);
+
+                Console.WriteLine($"✅ CreateConsultor: Consultor criado com ID {consultor.Id}");
+
+                return CreatedAtAction(nameof(GetConsultor), new { id = consultor.Id }, consultorCriado);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+                Console.WriteLine($"❌ CreateConsultor: Erro: {ex.Message}");
+                Console.WriteLine($"   Stack trace: {ex.StackTrace}");
+                return StatusCode(500, new { message = $"Erro ao criar consultor: {ex.Message}" });
             }
         }
 
-        // PUT: api/Consultor/5
+        // PUT: api/Consultor/{id}
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateConsultor(int id, UpdateConsultorDTO updateConsultorDTO)
+        public async Task<IActionResult> UpdateConsultor(int id, [FromBody] UpdateConsultorDTO dto)
         {
-            if (id != updateConsultorDTO.Id)
-            {
-                return BadRequest();
-            }
-
             try
             {
-                var consultorExistente = await _context.Consultores.FindAsync(id);
-                if (consultorExistente == null || !consultorExistente.Ativo)
+                Console.WriteLine($"📝 UpdateConsultor: Atualizando consultor {id}");
+
+                if (id != dto.Id)
                 {
-                    return NotFound();
+                    return BadRequest(new { message = "ID do consultor não corresponde" });
                 }
 
-                // Atualizar apenas os campos permitidos
-                consultorExistente.FilialId = updateConsultorDTO.FilialId;
-                consultorExistente.OAB = updateConsultorDTO.OAB;
-                consultorExistente.DataAtualizacao = DateTime.Now;
+                // Validar ModelState
+                if (!ModelState.IsValid)
+                {
+                    Console.WriteLine($"❌ UpdateConsultor: ModelState inválido");
+                    return BadRequest(ModelState);
+                }
 
+                var consultorExistente = await _context.Consultores.FindAsync(id);
+                if (consultorExistente == null)
+                {
+                    return NotFound(new {
+                        recurso = "Consultor",
+                        id = id,
+                        mensagem = $"Consultor #{id} não foi encontrado"
+                    });
+                }
+
+                // Verificar se a filial existe
+                var filial = await _context.Filiais.FindAsync(dto.FilialId);
+                if (filial == null)
+                {
+                    return BadRequest(new { message = "Filial não encontrada" });
+                }
+
+                // Atualizar apenas campos permitidos
+                consultorExistente.FilialId = dto.FilialId;
+                consultorExistente.OAB = dto.OAB;
+                consultorExistente.DataAtualizacao = DateTime.UtcNow;
+
+                _context.Entry(consultorExistente).State = EntityState.Modified;
                 await _context.SaveChangesAsync();
+
+                Console.WriteLine($"✅ UpdateConsultor: Consultor {id} atualizado com sucesso");
 
                 return NoContent();
             }
-            catch (DbUpdateConcurrencyException)
+            catch (DbUpdateConcurrencyException ex)
             {
-                if (!ConsultorExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
+                Console.WriteLine($"❌ UpdateConsultor: Erro de concorrência: {ex.Message}");
+                return StatusCode(409, new { message = "Erro de concorrência ao atualizar consultor" });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+                Console.WriteLine($"❌ UpdateConsultor: Erro: {ex.Message}");
+                return StatusCode(500, new { message = $"Erro ao atualizar consultor: {ex.Message}" });
             }
         }
 
-        // DELETE: api/Consultor/5
+        // DELETE: api/Consultor/{id}
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteConsultor(int id)
         {
-            var consultor = await _context.Consultores.FindAsync(id);
-            if (consultor == null || !consultor.Ativo)
-            {
-                return NotFound();
-            }
-
-            // Verificar se o consultor tem clientes ativos
-            var clientesAtivos = await _context.HistoricoConsultores
-                .Where(h => h.ConsultorId == id && h.DataFim == null)
-                .AnyAsync();
-
-            if (clientesAtivos)
-            {
-                return BadRequest("Não é possível excluir o consultor pois ele possui clientes ativos. Transfira os clientes para outro consultor primeiro.");
-            }
-
-            // Soft delete - apenas marca como inativo
-            consultor.Ativo = false;
-            consultor.DataAtualizacao = DateTime.Now;
-
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        // PATCH: api/Consultor/5/atualizar-filial
-        [HttpPatch("{id}/atualizar-filial")]
-        public async Task<IActionResult> AtualizarFilialConsultor(int id, UpdateConsultorDTO updateConsultorDTO)
-        {
-            if (id != updateConsultorDTO.Id)
-            {
-                return BadRequest();
-            }
-
             try
             {
-                var consultorExistente = await _context.Consultores.FindAsync(id);
-                if (consultorExistente == null || !consultorExistente.Ativo)
+                Console.WriteLine($"🗑️ DeleteConsultor: Deletando consultor {id}");
+
+                var consultor = await _context.Consultores.FindAsync(id);
+                if (consultor == null)
                 {
-                    return NotFound();
+                    return NotFound(new {
+                        recurso = "Consultor",
+                        id = id,
+                        mensagem = $"Consultor #{id} não foi encontrado"
+                    });
                 }
 
-                // Atualizar apenas os campos permitidos
-                consultorExistente.FilialId = updateConsultorDTO.FilialId;
-                consultorExistente.OAB = updateConsultorDTO.OAB;
-                consultorExistente.DataAtualizacao = DateTime.Now;
+                // Verificar se há contratos ATIVOS vinculados (contratos inativos não bloqueiam exclusão)
+                var temContratosAtivos = await _context.Contratos
+                    .AnyAsync(c => c.ConsultorId == id && c.Ativo);
+                if (temContratosAtivos)
+                {
+                    return BadRequest(new { message = "Não é possível excluir consultor com contratos ativos vinculados" });
+                }
 
-                await _context.SaveChangesAsync();
+                // Soft delete - marcar como inativo ao invés de deletar
+                Console.WriteLine($"🔧 DeleteConsultor: Consultor ANTES - Ativo={consultor.Ativo}");
+                
+                consultor.Ativo = false;
+                consultor.DataAtualizacao = DateTime.UtcNow;
+                
+                // Marcar explicitamente como modificado para garantir que o EF rastreie
+                _context.Entry(consultor).State = EntityState.Modified;
+                
+                var linhasAfetadas = await _context.SaveChangesAsync();
+                Console.WriteLine($"🔧 DeleteConsultor: SaveChanges retornou {linhasAfetadas} linhas afetadas");
+                Console.WriteLine($"🔧 DeleteConsultor: Consultor DEPOIS - Ativo={consultor.Ativo}");
+
+                Console.WriteLine($"✅ DeleteConsultor: Consultor {id} marcado como inativo");
 
                 return NoContent();
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+                Console.WriteLine($"❌ DeleteConsultor: Erro: {ex.Message}");
+                return StatusCode(500, new { message = $"Erro ao deletar consultor: {ex.Message}" });
             }
         }
 
-        // POST: api/Consultor/atribuir-cliente
-        [HttpPost("atribuir-cliente")]
-        public async Task<IActionResult> AtribuirCliente(AtribuirClienteDTO atribuirClienteDTO)
+        // GET: api/Consultor/{id}/diagnostico-exclusao (TEMPORÁRIO - para diagnóstico)
+        [HttpGet("{id}/diagnostico-exclusao")]
+        public async Task<IActionResult> DiagnosticoExclusao(int id)
         {
             try
             {
-                // Validar se o consultor existe
-                var consultor = await _context.Consultores
-                    .Include(c => c.PessoaFisica)
-                    .FirstOrDefaultAsync(c => c.Id == atribuirClienteDTO.ConsultorId && c.Ativo);
+                var consultor = await _context.Consultores.FindAsync(id);
                 if (consultor == null)
                 {
-                    return BadRequest("Consultor não encontrado ou inativo");
+                    return NotFound(new { message = $"Consultor {id} não encontrado" });
                 }
 
-                // Validar se o cliente existe
-                var cliente = await _context.Clientes
-                    .FirstOrDefaultAsync(c => c.Id == atribuirClienteDTO.ClienteId && c.Ativo);
-                if (cliente == null)
-                {
-                    return BadRequest("Cliente não encontrado ou inativo");
-                }
+                var contratos = await _context.Contratos
+                    .Where(c => c.ConsultorId == id)
+                    .Select(c => new { c.Id, c.Ativo, c.Situacao })
+                    .ToListAsync();
 
-                // Verificar se o cliente já tem um consultor ativo
-                var consultorAtual = await _context.HistoricoConsultores
-                    .Include(h => h.Cliente)
-                    .Where(h => h.ClienteId == atribuirClienteDTO.ClienteId && h.DataFim == null)
+                // Executar SQL direto para ver o valor real no banco
+                var ativoNoBanco = await _context.Database
+                    .SqlQueryRaw<int>($"SELECT Ativo FROM Consultores WHERE Id = {id}")
                     .FirstOrDefaultAsync();
 
-                if (consultorAtual != null)
+                return Ok(new
                 {
-                    var nomeConsultorAtual = await _context.Consultores
-                        .Include(c => c.PessoaFisica)
-                        .Where(c => c.Id == consultorAtual.ConsultorId)
-                        .Select(c => c.PessoaFisica.Nome)
-                        .FirstOrDefaultAsync();
-
-                    return BadRequest($"Este cliente já está atribuído ao consultor {nomeConsultorAtual}. Finalize o vínculo atual antes de criar um novo.");
-                }
-
-                // Finalizar período anterior se existir
-                if (consultorAtual != null)
-                {
-                    consultorAtual.DataFim = DateTime.Now;
-                    consultorAtual.MotivoTransferencia = "Transferência para novo consultor";
-                }
-
-                // Criar novo histórico
-                var novoHistorico = new HistoricoConsultor
-                {
-                    ClienteId = atribuirClienteDTO.ClienteId,
-                    ConsultorId = atribuirClienteDTO.ConsultorId,
-                    DataInicio = DateTime.Now,
-                    MotivoTransferencia = atribuirClienteDTO.MotivoAtribuicao,
-                    DataCadastro = DateTime.Now
-                };
-
-                _context.HistoricoConsultores.Add(novoHistorico);
-
-                // Atualizar o consultor atual no cliente
-                cliente.ConsultorAtualId = atribuirClienteDTO.ConsultorId;
-                cliente.DataAtualizacao = DateTime.Now;
-
-                await _context.SaveChangesAsync();
-
-                return Ok(new { message = "Cliente atribuído com sucesso ao consultor" });
+                    consultorId = id,
+                    ativoNoObjeto = consultor.Ativo,
+                    ativoNoBancoSQL = ativoNoBanco == 1,
+                    dataAtualizacao = consultor.DataAtualizacao,
+                    totalContratos = contratos.Count,
+                    contratosAtivos = contratos.Count(c => c.Ativo),
+                    listaContratos = contratos,
+                    podeExcluir = contratos.Count(c => c.Ativo) == 0
+                });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+                return StatusCode(500, new { message = ex.Message });
             }
         }
 
-        // GET: api/Consultor/5/clientes
-        [HttpGet("{id}/clientes")]
-        public async Task<ActionResult<IEnumerable<Cliente>>> GetClientesDoConsultor(int id)
+        // PUT: api/Consultor/{id}/teste-exclusao (TEMPORÁRIO - testa e retorna diagnóstico)
+        [HttpPut("{id}/teste-exclusao")]
+        public async Task<IActionResult> TesteExclusao(int id)
         {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            
             try
             {
-                var clientes = await _context.HistoricoConsultores
-                    .Include(h => h.Cliente)
-                        .ThenInclude(c => c.PessoaFisica)
-                            .ThenInclude(pf => pf!.Endereco)
-                    .Include(h => h.Cliente)
-                        .ThenInclude(c => c.PessoaJuridica)
-                            .ThenInclude(pj => pj!.Endereco)
-                    .Where(h => h.ConsultorId == id && h.DataFim == null && h.Cliente.Ativo)
-                    .Select(h => h.Cliente)
-                    .ToListAsync();
+                var consultor = await _context.Consultores.FindAsync(id);
+                if (consultor == null)
+                {
+                    await transaction.RollbackAsync();
+                    return NotFound(new { message = $"Consultor {id} não encontrado" });
+                }
 
-                return clientes.OrderBy(c =>
-                    c.TipoPessoa == "Fisica" ? c.PessoaFisica?.Nome : c.PessoaJuridica?.RazaoSocial).ToList();
+                var ativoAntes = consultor.Ativo;
+                
+                // Verificar contratos
+                var temContratosAtivos = await _context.Contratos.AnyAsync(c => c.ConsultorId == id && c.Ativo);
+                if (temContratosAtivos)
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest(new { message = "Consultor tem contratos ativos" });
+                }
+
+                // Forçar exclusão
+                consultor.Ativo = false;
+                consultor.DataAtualizacao = DateTime.UtcNow;
+                _context.Entry(consultor).State = EntityState.Modified;
+                
+                var linhasAfetadas = await _context.SaveChangesAsync();
+                
+                // Recarregar do banco
+                await _context.Entry(consultor).ReloadAsync();
+                var ativoDepois = consultor.Ativo;
+
+                // SQL direto
+                var ativoSQL = await _context.Database
+                    .SqlQueryRaw<int>($"SELECT Ativo FROM Consultores WHERE Id = {id}")
+                    .FirstOrDefaultAsync();
+
+                // ROLLBACK para não afetar o banco de verdade
+                await transaction.RollbackAsync();
+
+                return Ok(new
+                {
+                    teste = "ROLLBACK executado - nada foi salvo de fato",
+                    consultorId = id,
+                    ativoAntes,
+                    ativoDepoisSaveChanges = ativoDepois,
+                    ativoSQLDireto = ativoSQL == 1,
+                    linhasAfetadas,
+                    diagnostico = new
+                    {
+                        saveChangesFuncionou = linhasAfetadas > 0,
+                        valorPersistiuNoObjeto = !ativoDepois,
+                        valorPersistiuNoSQL = ativoSQL == 0,
+                        problema = linhasAfetadas > 0 && ativoSQL == 1 
+                            ? "SaveChanges retornou sucesso mas SQL mostra Ativo=1 (trigger ou default revertendo?)"
+                            : linhasAfetadas == 0 
+                            ? "SaveChanges não afetou nenhuma linha (EF não detectou mudança)"
+                            : "Funcionou corretamente"
+                    }
+                });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { message = ex.Message, stackTrace = ex.StackTrace });
             }
         }
 
-        // GET: api/Consultor/5/clientes-todos
-        [HttpGet("{id}/clientes-todos")]
-        public async Task<ActionResult<IEnumerable<HistoricoConsultor>>> GetHistoricoClientesDoConsultor(int id)
-        {
-            try
-            {
-                var historico = await _context.HistoricoConsultores
-                    .Include(h => h.Cliente)
-                        .ThenInclude(c => c.PessoaFisica)
-                    .Include(h => h.Cliente)
-                        .ThenInclude(c => c.PessoaJuridica)
-                    .Where(h => h.ConsultorId == id && h.Cliente.Ativo)
-                    .OrderByDescending(h => h.DataInicio)
-                    .ToListAsync();
-
-                return historico;
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
-            }
-        }
-
-        private bool ConsultorExists(int id)
-        {
-            return _context.Consultores.Any(e => e.Id == id && e.Ativo);
-        }
     }
 }

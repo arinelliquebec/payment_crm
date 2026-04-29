@@ -5,7 +5,7 @@
 ### 1. Criar Azure App Service
 1. Acesse [Portal Azure](https://portal.azure.com)
 2. Crie um novo App Service:
-   - Nome: `arrighi-bk`
+   - Nome: `contratos-bk`
    - Runtime: `.NET 8`
    - OS: Windows ou Linux
    - Region: escolha a região
@@ -39,7 +39,7 @@
 
 ## URLs importantes:
 - GitHub Actions: `https://github.com/seu-usuario/seu-repo/actions`
-- Azure App Service: `https://arrighi-bk-bzfmgxavaxbyh5ej.brazilsouth-01.azurewebsites.net`
+- Azure App Service: `https://contratos-bk-gag8afd6degtdca4.brazilsouth-01.azurewebsites.net`
 
 ## Troubleshooting:
 - Se der erro de build: verifique se o .NET 8.0 está instalado

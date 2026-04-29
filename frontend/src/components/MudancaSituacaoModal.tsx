@@ -1,7 +1,8 @@
 // src/components/MudancaSituacaoModal.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -53,6 +54,12 @@ export default function MudancaSituacaoModal({
   onSubmit,
   onClose,
 }: MudancaSituacaoModalProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const [formData, setFormData] = useState<MudancaSituacaoDTO>({
     novaSituacao: contrato.situacao,
     motivoMudanca: "",
@@ -237,7 +244,9 @@ export default function MudancaSituacaoModal({
     return sugestoes[chave] || "";
   };
 
-  return (
+  if (!mounted) return null;
+
+  const modalContent = (
     <AnimatePresence>
       {/* Overlay */}
       <motion.div
@@ -245,7 +254,7 @@ export default function MudancaSituacaoModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/30 backdrop-blur-sm z-[9999]"
+        className="fixed inset-0 bg-black/30 backdrop-blur-sm z-[99999]"
         onClick={onClose}
       />
 
@@ -255,49 +264,49 @@ export default function MudancaSituacaoModal({
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="fixed inset-0 flex items-center justify-center z-[9999] p-4"
+        className="fixed inset-0 flex items-center justify-center z-[99999] p-4"
       >
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden">
+        <div className="bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-800 w-full max-w-lg max-h-[90vh] overflow-hidden">
           {/* Header */}
-          <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 px-6 py-4">
+          <div className="px-6 py-4 border-b border-neutral-800">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-white/20 rounded-lg">
-                  <RefreshCcw className="w-5 h-5 text-white" />
+                <div className="p-2 bg-gradient-to-br from-amber-500 to-amber-600 rounded-lg">
+                  <RefreshCcw className="w-5 h-5 text-neutral-900" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-white">
+                  <h2 className="text-xl font-bold bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent">
                     Mudar Situação do Contrato
                   </h2>
-                  <p className="text-sm text-white/80">
+                  <p className="text-sm text-neutral-400">
                     Contrato #{contrato.id}
                   </p>
                 </div>
               </div>
               <button
                 onClick={onClose}
-                className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                className="p-2 text-neutral-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/30"
               >
-                <X className="w-5 h-5 text-white" />
+                <X className="w-5 h-5" />
               </button>
             </div>
           </div>
 
           {/* Situação Atual */}
-          <div className="px-6 py-4 bg-neutral-50 border-b border-neutral-200">
+          <div className="px-6 py-4 bg-neutral-900/30 border-b border-neutral-800">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-neutral-600 mb-1">Situação Atual</p>
+                <p className="text-xs text-neutral-400 mb-1">Situação Atual</p>
                 <SituacaoBadge situacao={contrato.situacao} />
               </div>
-              <TrendingUp className="w-5 h-5 text-neutral-400" />
+              <TrendingUp className="w-5 h-5 text-amber-400" />
               <div>
-                <p className="text-xs text-neutral-600 mb-1">Nova Situação</p>
+                <p className="text-xs text-neutral-400 mb-1">Nova Situação</p>
                 {formData.novaSituacao &&
                 formData.novaSituacao !== contrato.situacao ? (
                   <SituacaoBadge situacao={formData.novaSituacao} />
                 ) : (
-                  <span className="text-sm text-neutral-400">Selecione</span>
+                  <span className="text-sm text-neutral-500">Selecione</span>
                 )}
               </div>
             </div>
@@ -308,7 +317,7 @@ export default function MudancaSituacaoModal({
             <div className="space-y-4 max-h-[calc(90vh-280px)] overflow-y-auto">
               {/* Nova Situação */}
               <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-2">
+                <label className="block text-sm font-medium text-neutral-300 mb-2">
                   Nova Situação *
                 </label>
                 <select
@@ -316,13 +325,14 @@ export default function MudancaSituacaoModal({
                   value={formData.novaSituacao}
                   onChange={handleInputChange}
                   className={cn(
-                    "w-full px-4 py-2.5 bg-white border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent transition-all",
+                    "w-full px-4 py-2.5 bg-neutral-900/50 border rounded-lg text-sm text-neutral-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent transition-all",
                     errors.novaSituacao
-                      ? "border-red-300 bg-red-50"
-                      : "border-neutral-200"
+                      ? "border-red-500 bg-red-500/10"
+                      : "border-neutral-700",
+                    "[&>option]:bg-neutral-900 [&>option]:text-neutral-200"
                   )}
                 >
-                  <option value={contrato.situacao} disabled>
+                  <option value={contrato.situacao} disabled className="text-neutral-500">
                     {
                       SituacaoContratoOptions.find(
                         (opt) => opt.value === contrato.situacao
@@ -331,13 +341,13 @@ export default function MudancaSituacaoModal({
                     (Atual)
                   </option>
                   {situacoesDisponiveis.map((option) => (
-                    <option key={option.value} value={option.value}>
+                    <option key={option.value} value={option.value} className="bg-neutral-900 text-neutral-200">
                       {option.label}
                     </option>
                   ))}
                 </select>
                 {errors.novaSituacao && (
-                  <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                  <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3" />
                     {errors.novaSituacao}
                   </p>
@@ -346,21 +356,21 @@ export default function MudancaSituacaoModal({
 
               {/* Motivo da Mudança */}
               <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-2">
+                <label className="block text-sm font-medium text-neutral-300 mb-2">
                   Motivo da Mudança *
                 </label>
                 <div className="relative">
-                  <MessageSquare className="absolute left-3 top-3 w-4 h-4 text-neutral-400" />
+                  <MessageSquare className="absolute left-3 top-3 w-4 h-4 text-neutral-500" />
                   <textarea
                     name="motivoMudanca"
                     value={formData.motivoMudanca}
                     onChange={handleInputChange}
                     rows={3}
                     className={cn(
-                      "w-full pl-10 pr-4 py-2.5 bg-white border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent transition-all resize-none",
+                      "w-full pl-10 pr-4 py-2.5 bg-neutral-900/50 border rounded-lg text-sm text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent transition-all resize-none",
                       errors.motivoMudanca
-                        ? "border-red-300 bg-red-50"
-                        : "border-neutral-200"
+                        ? "border-red-500 bg-red-500/10"
+                        : "border-neutral-700"
                     )}
                     placeholder={
                       getSugestaoMotivo() || "Descreva o motivo da mudança..."
@@ -368,7 +378,7 @@ export default function MudancaSituacaoModal({
                   />
                 </div>
                 {errors.motivoMudanca && (
-                  <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                  <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3" />
                     {errors.motivoMudanca}
                   </p>
@@ -382,7 +392,7 @@ export default function MudancaSituacaoModal({
                         motivoMudanca: getSugestaoMotivo(),
                       }))
                     }
-                    className="mt-1 text-xs text-yellow-600 hover:text-yellow-700 transition-colors"
+                    className="mt-1 text-xs text-amber-400 hover:text-amber-300 transition-colors"
                   >
                     Usar sugestão: &quot;{getSugestaoMotivo()}&quot;
                   </button>
@@ -390,50 +400,50 @@ export default function MudancaSituacaoModal({
               </div>
 
               {/* Campos Opcionais */}
-              <div className="pt-4 border-t border-neutral-200">
-                <p className="text-sm font-medium text-neutral-700 mb-3">
+              <div className="pt-4 border-t border-neutral-800">
+                <p className="text-sm font-medium text-neutral-300 mb-3">
                   Campos Opcionais - Atualize se necessário
                 </p>
 
                 {/* Datas */}
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div>
-                    <label className="block text-xs font-medium text-neutral-600 mb-1">
+                    <label className="block text-xs font-medium text-neutral-400 mb-1">
                       Data Último Contato
                     </label>
                     <div className="relative">
-                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400" />
+                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-500" />
                       <input
                         type="date"
                         name="dataUltimoContato"
                         value={formData.dataUltimoContato}
                         onChange={handleInputChange}
-                        className="w-full pl-9 pr-3 py-2 bg-white border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent transition-all"
+                        className="w-full pl-9 pr-3 py-2 bg-neutral-900/50 border border-neutral-700 rounded-lg text-sm text-neutral-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent transition-all"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-neutral-600 mb-1">
+                    <label className="block text-xs font-medium text-neutral-400 mb-1">
                       Data Próximo Contato
                     </label>
                     <div className="relative">
-                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400" />
+                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-500" />
                       <input
                         type="date"
                         name="dataProximoContato"
                         value={formData.dataProximoContato}
                         onChange={handleInputChange}
                         className={cn(
-                          "w-full pl-9 pr-3 py-2 bg-white border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent transition-all",
+                          "w-full pl-9 pr-3 py-2 bg-neutral-900/50 border rounded-lg text-sm text-neutral-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent transition-all",
                           errors.dataProximoContato
-                            ? "border-red-300 bg-red-50"
-                            : "border-neutral-200"
+                            ? "border-red-500 bg-red-500/10"
+                            : "border-neutral-700"
                         )}
                       />
                     </div>
                     {errors.dataProximoContato && (
-                      <p className="mt-1 text-xs text-red-600">
+                      <p className="mt-1 text-xs text-red-400">
                         {errors.dataProximoContato}
                       </p>
                     )}
@@ -442,11 +452,11 @@ export default function MudancaSituacaoModal({
 
                 {/* Valor Negociado */}
                 <div className="mb-3">
-                  <label className="block text-xs font-medium text-neutral-600 mb-1">
+                  <label className="block text-xs font-medium text-neutral-400 mb-1">
                     Valor Negociado
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-neutral-400">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-neutral-500">
                       R$
                     </span>
                     <input
@@ -455,16 +465,16 @@ export default function MudancaSituacaoModal({
                       value={formatCurrency(formData.valorNegociado)}
                       onChange={handleInputChange}
                       className={cn(
-                        "w-full pl-10 pr-3 py-2 bg-white border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent transition-all",
+                        "w-full pl-10 pr-3 py-2 bg-neutral-900/50 border rounded-lg text-sm text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent transition-all",
                         errors.valorNegociado
-                          ? "border-red-300 bg-red-50"
-                          : "border-neutral-200"
+                          ? "border-red-500 bg-red-500/10"
+                          : "border-neutral-700"
                       )}
                       placeholder="0,00"
                     />
                   </div>
                   {errors.valorNegociado && (
-                    <p className="mt-1 text-xs text-red-600">
+                    <p className="mt-1 text-xs text-red-400">
                       {errors.valorNegociado}
                     </p>
                   )}
@@ -472,7 +482,7 @@ export default function MudancaSituacaoModal({
 
                 {/* Observações Adicionais */}
                 <div>
-                  <label className="block text-xs font-medium text-neutral-600 mb-1">
+                  <label className="block text-xs font-medium text-neutral-400 mb-1">
                     Observações Adicionais
                   </label>
                   <textarea
@@ -480,7 +490,7 @@ export default function MudancaSituacaoModal({
                     value={formData.observacoes}
                     onChange={handleInputChange}
                     rows={2}
-                    className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent transition-all resize-none"
+                    className="w-full px-3 py-2 bg-neutral-900/50 border border-neutral-700 rounded-lg text-sm text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent transition-all resize-none"
                     placeholder="Informações adicionais sobre a mudança..."
                   />
                 </div>
@@ -488,13 +498,13 @@ export default function MudancaSituacaoModal({
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-end gap-3 mt-6 pt-6 border-t border-neutral-200">
+            <div className="flex items-center justify-end gap-3 mt-6 pt-6 border-t border-neutral-800">
               <motion.button
                 type="button"
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={onClose}
-                className="px-4 py-2 text-neutral-700 hover:bg-neutral-100 rounded-lg font-medium transition-colors"
+                className="px-4 py-2 text-neutral-300 bg-neutral-800/50 hover:bg-neutral-800 border border-neutral-700 rounded-lg font-medium transition-colors"
                 disabled={submitting}
               >
                 Cancelar
@@ -504,7 +514,7 @@ export default function MudancaSituacaoModal({
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 disabled={submitting}
-                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-white rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-neutral-900 rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-amber-500/30"
               >
                 {submitting ? (
                   <>
@@ -524,4 +534,6 @@ export default function MudancaSituacaoModal({
       </motion.div>
     </AnimatePresence>
   );
+
+  return createPortal(modalContent, document.body);
 }

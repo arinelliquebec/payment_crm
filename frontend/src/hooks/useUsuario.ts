@@ -9,6 +9,7 @@ import {
   PessoaJuridicaOption,
 } from "@/types/api";
 import { useAtividadeContext } from "@/contexts/AtividadeContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface UseUsuarioState {
   usuarios: Usuario[];
@@ -30,6 +31,7 @@ export function useUsuario() {
   });
 
   const { adicionarAtividade } = useAtividadeContext();
+  const { user } = useAuth();
 
   const setLoading = (loading: boolean) => {
     setState((prev) => ({ ...prev, loading }));
@@ -136,7 +138,7 @@ export function useUsuario() {
       setState((prev) => ({ ...prev, creating: true, error: null }));
 
       try {
-        const response = await apiClient.post<Usuario>("/Usuario", data);
+        const response = await apiClient.post<Usuario>("/Usuario/create", data);
 
         if (response.error) {
           setError(response.error);
@@ -148,7 +150,7 @@ export function useUsuario() {
 
         // Registrar atividade
         adicionarAtividade(
-          "Admin User",
+          user?.nome || user?.login || "Usuário",
           `Cadastrou novo usuário: ${data.login}`,
           "success",
           `Email: ${data.email}`,
@@ -184,7 +186,7 @@ export function useUsuario() {
 
         // Registrar atividade
         adicionarAtividade(
-          "Admin User",
+          user?.nome || user?.login || "Usuário",
           `Atualizou usuário: ${data.login}`,
           "info",
           `Tipo: ${
@@ -226,7 +228,7 @@ export function useUsuario() {
         // Registrar atividade
         if (usuarioParaDeletar) {
           adicionarAtividade(
-            "Admin User",
+            user?.nome || user?.login || "Usuário",
             `Excluiu usuário: ${usuarioParaDeletar.login}`,
             "warning",
             `Email: ${usuarioParaDeletar.email}`,
@@ -247,7 +249,12 @@ export function useUsuario() {
 
   // Carregar dados iniciais
   useEffect(() => {
-    fetchUsuarios();
+    try {
+      fetchUsuarios();
+    } catch (error) {
+      console.error("Erro ao carregar usuários iniciais:", error);
+      setError("Erro ao carregar dados iniciais");
+    }
   }, []); // Remover fetchUsuarios da dependência para evitar loops
 
   return {

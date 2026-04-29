@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "@/lib/api";
 import { Consultor, CreateConsultorDTO, UpdateConsultorDTO } from "@/types/api";
 import { useAtividadeContext } from "@/contexts/AtividadeContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface UseConsultoresState {
   consultores: Consultor[];
@@ -24,6 +25,7 @@ export function useConsultores() {
   });
 
   const { adicionarAtividade } = useAtividadeContext();
+  const { user } = useAuth();
 
   const fetchConsultores = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
@@ -81,7 +83,8 @@ export function useConsultores() {
             pessoaFisicaId: number;
             pessoaFisica?: {
               nome?: string;
-              email?: string;
+              emailEmpresarial?: string;
+              emailPessoal?: string;
               telefone1?: string;
               telefone2?: string;
             };
@@ -95,11 +98,10 @@ export function useConsultores() {
           return {
             ...c,
             nome: c.pessoaFisica?.nome,
-            email: c.pessoaFisica?.email,
+            email: c.pessoaFisica?.emailEmpresarial,
             telefone1: c.pessoaFisica?.telefone1,
             telefone2: c.pessoaFisica?.telefone2,
             oab: c.oab, // Usando o campo OAB real
-            especialidades: [], // Array vazio por padrão
             status: "ativo" as const, // Status padrão
             casosAtivos: 0, // Valor padrão
             taxaSucesso: 0, // Valor padrão
@@ -155,7 +157,7 @@ export function useConsultores() {
 
         // Registrar atividade
         adicionarAtividade(
-          "Admin User",
+          user?.nome || user?.login || "Usuário",
           `Cadastrou novo consultor: ${data.nome}`,
           "success",
           `OAB: ${data.oab || "Não informado"}`,
@@ -206,7 +208,7 @@ export function useConsultores() {
 
         // Registrar atividade
         adicionarAtividade(
-          "Admin User",
+          user?.nome || user?.login || "Usuário",
           `Atualizou consultor: ${data.nome}`,
           "info",
           `Filial ID: ${data.filialId}`,
@@ -248,7 +250,7 @@ export function useConsultores() {
         // Registrar atividade
         if (consultorParaDeletar) {
           adicionarAtividade(
-            "Admin User",
+            user?.nome || user?.login || "Usuário",
             `Excluiu consultor: ${consultorParaDeletar.nome}`,
             "warning",
             `OAB: ${consultorParaDeletar.oab || "Não informado"}`,

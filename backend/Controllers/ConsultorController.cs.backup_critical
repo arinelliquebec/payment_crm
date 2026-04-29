@@ -1,0 +1,63 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using CrmArrighi.Data;
+using CrmArrighi.Models;
+
+namespace CrmArrighi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class ConsultorController : ControllerBase
+    {
+        private readonly CrmArrighiContext _context;
+
+        public ConsultorController(CrmArrighiContext context)
+        {
+            _context = context;
+        }
+
+        // GET: api/Consultor
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<Consultor>>> GetConsultores()
+        {
+            try
+            {
+                Console.WriteLine("🔍 GetConsultores: Buscando TODOS os consultores SEM FILTROS");
+
+                // RETORNAR TODOS OS DADOS SEM RESTRIÇÕES
+                var consultores = await _context.Consultores
+                    .Include(c => c.PessoaFisica)
+                    .Include(c => c.Filial)
+                    .ToListAsync();
+
+                Console.WriteLine($"✅ GetConsultores: Retornando {consultores.Count} consultores");
+
+                return Ok(consultores);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ GetConsultores: Erro: {ex.Message}");
+                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+            }
+        }
+
+        // GET: api/Consultor/{id}
+        [HttpGet("{id}")]
+        public async Task<ActionResult<Consultor>> GetConsultor(int id)
+        {
+                var consultor = await _context.Consultores
+                    .Include(c => c.PessoaFisica)
+                        .ThenInclude(pf => pf!.Endereco)
+                    .Include(c => c.Filial)
+                .FirstOrDefaultAsync(c => c.Id == id);
+
+                if (consultor == null)
+            {
+                return NotFound($"Consultor com ID {id} não encontrado.");
+            }
+
+            return consultor;
+        }
+
+    }
+}

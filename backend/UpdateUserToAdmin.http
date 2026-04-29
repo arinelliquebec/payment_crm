@@ -1,0 +1,23 @@
+# Arquivo para testar a atualização de usuário para administrador
+# Use este arquivo no VS Code com a extensão REST Client
+
+### 1. Atualizar usuário com CPF 12365382770 para Administrador
+PUT {{baseUrl}}/api/Usuario/cpf/12365382770/grupo/Administrador
+Content-Type: application/json
+
+### 2. Verificar se a atualização funcionou - listar usuários
+GET {{baseUrl}}/api/Usuario
+Content-Type: application/json
+
+### 3. Buscar pessoa física pelo CPF para verificar dados
+GET {{baseUrl}}/api/PessoaFisica/cpf/12365382770
+Content-Type: application/json
+
+### 4. Exemplo alternativo: atualizar por ID do usuário (se souber o ID)
+# PUT {{baseUrl}}/api/Usuario/1/grupo/1
+# Content-Type: application/json
+
+### Configuração da URL base (ajuste conforme necessário)
+@baseUrl = https://localhost:7001
+# ou
+# @baseUrl = http://localhost:5000

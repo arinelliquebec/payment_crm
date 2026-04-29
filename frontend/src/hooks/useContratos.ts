@@ -1,6 +1,7 @@
 // src/hooks/useContratos.ts
 import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "@/lib/api";
+import { retryOperation } from "@/hooks/useRetry";
 import {
   Contrato,
   Cliente,
@@ -10,6 +11,50 @@ import {
   HistoricoSituacaoContrato,
 } from "@/types/api";
 import { useAtividadeContext } from "@/contexts/AtividadeContext";
+import { useAuth } from "@/contexts/AuthContext";
+
+type BackendErrorPayload = {
+  sucesso?: boolean;
+  mensagem?: string;
+  mensagemUsuario?: string;
+  erros?: Array<{
+    campo?: string;
+    mensagem?: string;
+  }>;
+  detalhes?: string;
+  innerException?: string;
+};
+
+function tryParseJson<T>(text: string): T | null {
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
+function buildApiError(
+  status: number,
+  errorText: string
+): Error & {
+  response?: { status: number; data?: BackendErrorPayload };
+} {
+  const parsed = tryParseJson<unknown>(errorText);
+  const data =
+    parsed && typeof parsed === "object"
+      ? (parsed as BackendErrorPayload)
+      : ({
+          mensagemUsuario: errorText,
+          mensagem: errorText,
+        } satisfies BackendErrorPayload);
+
+  const message =
+    data.mensagemUsuario || data.mensagem || errorText || `Erro HTTP ${status}`;
+
+  const err: any = new Error(message);
+  err.response = { status, data };
+  return err;
+}
 
 interface UseContratosState {
   contratos: Contrato[];
@@ -35,6 +80,7 @@ export function useContratos() {
   });
 
   const { adicionarAtividade } = useAtividadeContext();
+  const { user } = useAuth();
 
   const fetchContratos = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
@@ -44,7 +90,25 @@ export function useContratos() {
         "🔧 useContratos: sessionContratos atuais:",
         state.sessionContratos.length
       );
-      const response = await apiClient.get("/Contrato");
+
+      // Adicionar cache-busting para garantir dados atualizados
+      const timestamp = Date.now();
+
+      // Usar retry para buscar contratos com resiliência
+      const response = await retryOperation(
+        () => apiClient.get(`/Contrato?t=${timestamp}`),
+        {
+          maxAttempts: 3,
+          delay: 1000,
+          backoff: true,
+          onRetry: (attempt, error) => {
+            console.warn(
+              `Tentativa ${attempt} de buscar contratos falhou:`,
+              error
+            );
+          },
+        }
+      );
 
       // Verificar se há erro na resposta
       if (response.error) {
@@ -148,6 +212,15 @@ export function useContratos() {
 
         // Depois, adicionar contratos da sessão (podem sobrescrever os da API)
         for (const sc of prev.sessionContratos) {
+          // Validar que o contrato existe e não é null/undefined
+          if (!sc || typeof sc !== "object") {
+            console.error(
+              "🔧 useContratos: Contrato da sessão inválido (null/undefined):",
+              sc
+            );
+            continue;
+          }
+
           // Validar ID do contrato da sessão
           if (!sc.id || sc.id === undefined || sc.id === null || isNaN(sc.id)) {
             console.error(
@@ -157,10 +230,28 @@ export function useContratos() {
             continue;
           }
 
-          // Validar se o contrato tem dados básicos
-          if (!sc.clienteId || !sc.consultorId) {
+          // Validar se o contrato tem dados básicos (clienteId é obrigatório)
+          if (
+            !sc.clienteId ||
+            sc.clienteId === undefined ||
+            sc.clienteId === null ||
+            isNaN(sc.clienteId)
+          ) {
             console.warn(
-              "🔧 useContratos: Contrato da sessão com dados incompletos, removendo:",
+              "🔧 useContratos: Contrato da sessão sem clienteId válido, removendo:",
+              sc
+            );
+            continue;
+          }
+
+          // Consultor pode ser opcional em alguns casos, mas vamos validar se existe
+          if (
+            sc.consultorId !== undefined &&
+            sc.consultorId !== null &&
+            isNaN(sc.consultorId)
+          ) {
+            console.warn(
+              "🔧 useContratos: Contrato da sessão com consultorId inválido, removendo:",
               sc
             );
             continue;
@@ -227,6 +318,11 @@ export function useContratos() {
         );
         const response = await apiClient.post("/Contrato", data);
 
+        // ✅ Novo tratamento: backend retorna erro estruturado (400/500)
+        if (response.error) {
+          throw buildApiError(response.status, response.error);
+        }
+
         // Considerar sucesso quando status 200-201, mesmo sem JSON, e criar contrato local
         if (!response.data && response.status >= 200 && response.status < 300) {
           console.warn(
@@ -237,6 +333,10 @@ export function useContratos() {
           const contratoLocal: Contrato = {
             id: Date.now(), // ID temporário baseado no timestamp
             ...data,
+            dataUltimoContato: data.dataUltimoContato || new Date().toISOString(),
+            dataProximoContato:
+              data.dataProximoContato ||
+              new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
             cliente: undefined, // Será preenchido depois
             consultor: undefined, // Será preenchido depois
             parceiro: undefined, // Será preenchido depois
@@ -245,11 +345,21 @@ export function useContratos() {
             ativo: true,
           };
 
-          // Tentar preencher dados do cliente
+          // Buscar dados do cliente (uma única vez para tudo)
+          let clienteCompleto: any = null;
+          let nomeCliente = "Cliente";
+
           try {
-            const clienteCompleto = await fetchClienteCompleto(data.clienteId);
+            clienteCompleto = await fetchClienteCompleto(data.clienteId);
             if (clienteCompleto) {
               contratoLocal.cliente = clienteCompleto as any;
+              // Extrair nome do cliente para a atividade
+              nomeCliente =
+                clienteCompleto.pessoaFisica?.nome ||
+                clienteCompleto.pessoaJuridica?.razaoSocial ||
+                clienteCompleto.nome ||
+                clienteCompleto.razaoSocial ||
+                `Cliente ID ${data.clienteId}`;
             }
           } catch (e) {
             console.warn(
@@ -290,16 +400,33 @@ export function useContratos() {
             }
           }
 
+          // Validar que contratoLocal tem um ID válido antes de adicionar
+          if (!contratoLocal || !contratoLocal.id || isNaN(contratoLocal.id)) {
+            console.error(
+              "🔧 createContrato: Erro - contratoLocal inválido ou sem ID:",
+              contratoLocal
+            );
+            throw new Error(
+              "Erro ao criar contrato: não foi possível criar contrato local"
+            );
+          }
+
           setState((prev) => ({
             ...prev,
-            contratos: [...prev.contratos, contratoLocal],
-            sessionContratos: [...prev.sessionContratos, contratoLocal],
+            contratos: [
+              ...prev.contratos.filter((c) => c && c.id),
+              contratoLocal,
+            ],
+            sessionContratos: [
+              ...prev.sessionContratos.filter((c) => c && c.id),
+              contratoLocal,
+            ],
             creating: false,
           }));
 
           adicionarAtividade(
-            "Admin User",
-            `Criou novo contrato para cliente ID ${data.clienteId}`,
+            user?.nome || user?.login || "Usuário",
+            `Criou novo contrato para ${nomeCliente}`,
             "success",
             `Situação: ${data.situacao}`,
             "Contratos"
@@ -322,6 +449,8 @@ export function useContratos() {
         );
 
         // Se o backend não retornou o objeto do cliente/consultor, tentar completar
+        let nomeCliente = "Cliente";
+
         try {
           if (!novoContrato.cliente && novoContrato.clienteId) {
             const clienteCompleto = await fetchClienteCompleto(
@@ -332,7 +461,22 @@ export function useContratos() {
                 ...novoContrato,
                 cliente: clienteCompleto as any,
               };
+              // Extrair nome do cliente para a atividade (reutilizando a mesma busca)
+              nomeCliente =
+                clienteCompleto.pessoaFisica?.nome ||
+                clienteCompleto.pessoaJuridica?.razaoSocial ||
+                clienteCompleto.nome ||
+                clienteCompleto.razaoSocial ||
+                `Cliente ID ${data.clienteId}`;
             }
+          } else if (novoContrato.cliente) {
+            // Cliente já veio do backend, extrair nome dele
+            nomeCliente =
+              novoContrato.cliente.pessoaFisica?.nome ||
+              novoContrato.cliente.pessoaJuridica?.razaoSocial ||
+              novoContrato.cliente.nome ||
+              novoContrato.cliente.razaoSocial ||
+              `Cliente ID ${data.clienteId}`;
           }
 
           // Buscar dados completos do consultor se não estiverem presentes
@@ -366,13 +510,28 @@ export function useContratos() {
           novoContrato
         );
 
+        // Validar que novoContrato existe e tem um ID válido
+        if (!novoContrato || !novoContrato.id || isNaN(novoContrato.id)) {
+          console.error(
+            "🔧 createContrato: Erro - novoContrato inválido ou sem ID:",
+            novoContrato
+          );
+          throw new Error(
+            "Erro ao criar contrato: resposta inválida do servidor"
+          );
+        }
+
         setState((prev) => {
           const newContratos = [
-            ...prev.contratos.filter((c) => c.id !== novoContrato.id),
+            ...prev.contratos.filter(
+              (c) => c && c.id && c.id !== novoContrato.id
+            ),
             novoContrato,
           ];
           const newSessionContratos = [
-            ...prev.sessionContratos.filter((c) => c.id !== novoContrato.id),
+            ...prev.sessionContratos.filter(
+              (c) => c && c.id && c.id !== novoContrato.id
+            ),
             novoContrato,
           ];
 
@@ -389,8 +548,8 @@ export function useContratos() {
         });
 
         adicionarAtividade(
-          "Admin User",
-          `Criou novo contrato para cliente ID ${data.clienteId}`,
+          user?.nome || user?.login || "Usuário",
+          `Criou novo contrato para ${nomeCliente}`,
           "success",
           `Situação: ${data.situacao}`,
           "Contratos"
@@ -409,6 +568,8 @@ export function useContratos() {
         });
 
         const errorMessage =
+          error?.response?.data?.mensagemUsuario ||
+          error?.response?.data?.mensagem ||
           error.response?.data?.message ||
           error.response?.data?.title ||
           error.message ||
@@ -420,8 +581,20 @@ export function useContratos() {
           creating: false,
         }));
 
-        // Re-throw para que o componente possa tratar o erro
-        throw new Error(errorMessage);
+        // Re-throw para que o componente possa tratar o erro (preservando response/data)
+        try {
+          if (error && typeof error === "object") {
+            (error as any).message = errorMessage;
+          }
+        } catch {}
+
+        if (error instanceof Error) {
+          throw error;
+        }
+
+        const wrapped: any = new Error(errorMessage);
+        if (error?.response) wrapped.response = error.response;
+        throw wrapped;
       }
     },
     // Note: fetchClienteCompleto is defined later; avoid referencing it in deps to satisfy TS
@@ -433,6 +606,14 @@ export function useContratos() {
       setState((prev) => ({ ...prev, updating: true, error: null }));
       try {
         const response = await apiClient.put(`/Contrato/${id}`, data);
+        if (response.error) {
+          throw buildApiError(response.status, response.error);
+        }
+        if (!response.data) {
+          throw new Error(
+            "Resposta inválida do servidor ao atualizar contrato"
+          );
+        }
         const contratoAtualizado = response.data as Contrato;
 
         setState((prev) => ({
@@ -447,7 +628,7 @@ export function useContratos() {
         }));
 
         adicionarAtividade(
-          "Admin User",
+          user?.nome || user?.login || "Usuário",
           `Atualizou contrato #${id}`,
           "info",
           "",
@@ -457,11 +638,25 @@ export function useContratos() {
         await fetchContratos();
         return contratoAtualizado;
       } catch (error: any) {
+        const errorMessage =
+          error?.response?.data?.mensagemUsuario ||
+          error?.response?.data?.mensagem ||
+          error?.message ||
+          "Erro ao atualizar contrato";
+
         setState((prev) => ({
           ...prev,
-          error: error.response?.data?.message || "Erro ao atualizar contrato",
+          error: errorMessage,
           updating: false,
         }));
+
+        // Preservar response/data quando existir
+        try {
+          if (error && typeof error === "object") {
+            (error as any).message = errorMessage;
+          }
+        } catch {}
+
         throw error;
       }
     },
@@ -554,7 +749,7 @@ export function useContratos() {
         }));
 
         adicionarAtividade(
-          "Admin User",
+          user?.nome || user?.login || "Usuário",
           `Mudou situação do contrato #${id}`,
           "info",
           `Nova situação: ${data.novaSituacao}`,
@@ -647,7 +842,7 @@ export function useContratos() {
         }));
 
         adicionarAtividade(
-          "Admin User",
+          user?.nome || user?.login || "Usuário",
           `Excluiu contrato #${id}`,
           "warning",
           "",
@@ -719,7 +914,7 @@ export function useContratos() {
           nome: clienteData.pessoaFisica?.nome,
           razaoSocial: clienteData.pessoaJuridica?.razaoSocial,
           email:
-            clienteData.pessoaFisica?.email ||
+            clienteData.pessoaFisica?.emailEmpresarial ||
             clienteData.pessoaJuridica?.email,
           cpf: clienteData.pessoaFisica?.cpf,
           cnpj: clienteData.pessoaJuridica?.cnpj,

@@ -1,5 +1,6 @@
 // src/lib/api.ts
 import { getApiUrl, isDevelopment } from "../../env.config";
+import logger from "./logger";
 
 const API_BASE_URL = getApiUrl();
 
@@ -14,12 +15,12 @@ class ApiClient {
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
-    console.log("🔧 ApiClient: Base URL configurada como:", this.baseUrl);
-    console.log("🔧 ApiClient: NODE_ENV =", process.env.NODE_ENV);
+    logger.log("🔧 ApiClient: Base URL configurada como:", this.baseUrl);
+    logger.log("🔧 ApiClient: NODE_ENV =", process.env.NODE_ENV);
 
     // Verificação adicional para garantir que a URL está correta
     if (!this.baseUrl || this.baseUrl === "undefined") {
-      console.error("🔧 ApiClient: ERRO - Base URL está undefined ou vazia!");
+      logger.error("🔧 ApiClient: ERRO - Base URL está undefined ou vazia!");
       throw new Error("API Base URL não foi configurada corretamente");
     }
   }
@@ -31,23 +32,59 @@ class ApiClient {
     const url = `${this.baseUrl}${endpoint}`;
 
     try {
+      // Verificar se há token de autenticação ou usuário logado
+      const token =
+        typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      const isAuthenticated =
+        typeof window !== "undefined"
+          ? localStorage.getItem("isAuthenticated") === "true"
+          : false;
+      const user =
+        typeof window !== "undefined" ? localStorage.getItem("user") : null;
+
+      // Tentar obter ID do usuário
+      let usuarioId = null;
+      if (user) {
+        try {
+          const userData = JSON.parse(user);
+          // Tentar diferentes propriedades possíveis para o ID do usuário
+          usuarioId =
+            userData.UsuarioId ||
+            userData.usuarioId ||
+            userData.id ||
+            userData.Id ||
+            userData.userId;
+        } catch (e) {
+          logger.warn("Erro ao fazer parse do usuário:", e);
+        }
+      }
+
+      // Log para debug em desenvolvimento
+      if (isDevelopment()) {
+        logger.log("🔧 ApiClient: Dados do usuário:", {
+          user,
+          usuarioId,
+          isAuthenticated,
+        });
+      }
+
       const config: RequestInit = {
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
+          ...(token && { Authorization: `Bearer ${token}` }),
+          // Só enviar X-Usuario-Id se tivermos um ID válido
+          ...(usuarioId && { "X-Usuario-Id": usuarioId.toString() }),
           ...options.headers,
         },
         ...options,
       };
 
-      // Log da URL sempre (para debug de produção)
-      console.log(`🌐 Making request to: ${url}`);
-      console.log(`🌐 Request method: ${options.method || "GET"}`);
-      console.log(`🌐 Environment: ${process.env.NODE_ENV}`);
-      console.log(`🌐 Base URL: ${this.baseUrl}`);
-
+      // Log apenas em desenvolvimento
       if (isDevelopment()) {
-        console.log(`🌐 Request headers:`, config.headers);
+        logger.log(`🌐 Making request to: ${url}`);
+        logger.log(`🌐 Request method: ${options.method || "GET"}`);
+        logger.log(`🌐 Request headers:`, config.headers);
       }
 
       // Timeout desabilitado por solicitação
@@ -55,17 +92,15 @@ class ApiClient {
       try {
         response = await fetch(url, config);
       } catch (networkError) {
-        console.error("🔧 ApiClient: Network error on fetch:", networkError);
+        logger.error("🔧 ApiClient: Network error on fetch:", networkError);
         return { error: "Failed to fetch", status: 0 };
       }
 
-      // Debug logging
-      console.log("🔧 ApiClient: Response status:", response.status);
-      console.log("🔧 ApiClient: Response ok:", response.ok);
-      console.log(
-        "🔧 ApiClient: Response headers:",
-        Object.fromEntries(response.headers.entries())
-      );
+      // Debug logging apenas em desenvolvimento
+      if (isDevelopment()) {
+        logger.log("🔧 ApiClient: Response status:", response.status);
+        logger.log("🔧 ApiClient: Response ok:", response.ok);
+      }
 
       // Read response body once and store it
       let responseText = "";
@@ -74,7 +109,7 @@ class ApiClient {
       try {
         responseText = await response.text();
       } catch (error) {
-        console.error("🔧 ApiClient: Erro ao ler resposta:", error);
+        logger.error("🔧 ApiClient: Erro ao ler resposta:", error);
         return {
           error: "Erro ao ler resposta do servidor",
           status: response.status,
@@ -82,25 +117,31 @@ class ApiClient {
       }
 
       if (!response.ok) {
-        console.error("🔧 ApiClient: Erro na resposta:", responseText);
-        console.error("🔧 ApiClient: Status:", response.status);
-        console.error("🔧 ApiClient: URL:", url);
-        console.error(
-          "🔧 ApiClient: Headers:",
-          Object.fromEntries(response.headers.entries())
-        );
-
-        // Log de erro em desenvolvimento
-        if (isDevelopment()) {
-          console.error(`API Error: ${response.status} - ${responseText}`);
+        // Se for erro de autenticação em endpoints de dados, tentar novamente sem autenticação
+        if (response.status === 401 && this.isDataEndpoint(endpoint)) {
+          logger.log(
+            "🔄 Tentando requisição sem autenticação para endpoint de dados"
+          );
+          return this.requestWithoutAuth(endpoint, options);
         }
 
-        // Se a resposta estiver vazia, fornecer uma mensagem mais específica
+        // Se a resposta estiver vazia, retornar sem logar como erro (é comum em 401/403/404)
         if (!responseText || responseText.trim() === "") {
+          if (isDevelopment() && response.status >= 500) {
+            logger.error(
+              `🔧 ApiClient: Erro ${response.status} com corpo vazio — ${url}`
+            );
+          }
           return {
-            error: `Resposta vazia do servidor (Status: ${response.status}). Verifique se o backend está rodando.`,
+            error: `Erro ${response.status}`,
             status: response.status,
           };
+        }
+
+        // Só loga como error para 5xx; 4xx são warn
+        if (isDevelopment()) {
+          const logFn = response.status >= 500 ? logger.error : logger.warn;
+          logFn(`API ${response.status}: ${endpoint} — ${responseText}`);
         }
 
         return {
@@ -121,7 +162,7 @@ class ApiClient {
       }
 
       if (!contentType || !contentType.includes("application/json")) {
-        console.error(
+        logger.error(
           `Non-JSON response received: ${contentType}`,
           responseText
         );
@@ -136,22 +177,27 @@ class ApiClient {
         data = JSON.parse(responseText);
       } catch (jsonError) {
         // Se não conseguir fazer parse do JSON, pode ser uma resposta vazia
-        console.error("🔧 ApiClient: Erro ao fazer parse do JSON:", jsonError);
-        console.error("🔧 ApiClient: Response text:", responseText);
+        logger.error("🔧 ApiClient: Erro ao fazer parse do JSON:", jsonError);
+        logger.error("🔧 ApiClient: Response text:", responseText);
         if (isDevelopment()) {
-          console.warn(`JSON parse error for ${endpoint}:`, jsonError);
+          logger.warn(`JSON parse error for ${endpoint}:`, jsonError);
         }
         data = null;
       }
 
-      // Log de sucesso em desenvolvimento
+      // Log apenas em desenvolvimento
       if (isDevelopment()) {
-        console.log(`API Success: ${response.status} - ${endpoint}`, data);
+        logger.log(`✅ API Success: ${response.status} - ${endpoint}`);
+        logger.log(
+          `✅ Data type: ${
+            Array.isArray(data) ? `Array[${data.length}]` : typeof data
+          }`
+        );
       }
 
       // Log adicional para debug em desenvolvimento
       if (isDevelopment()) {
-        console.log(`🔧 ApiClient: Resposta para ${endpoint}:`, {
+        logger.log(`🔧 ApiClient: Resposta para ${endpoint}:`, {
           status: response.status,
           data: data,
           hasData: !!data,
@@ -165,11 +211,11 @@ class ApiClient {
         status: response.status,
       };
     } catch (error) {
-      console.error("🔧 ApiClient: Erro na requisição:", error);
+      logger.error("🔧 ApiClient: Erro na requisição:", error);
 
       // Log de erro em desenvolvimento
       if (isDevelopment()) {
-        console.error(
+        logger.error(
           `Network Error: ${
             error instanceof Error ? error.message : "Unknown error"
           }`
@@ -177,7 +223,7 @@ class ApiClient {
 
         // Log específico para abort signals
         if (error instanceof Error && error.name === "AbortError") {
-          console.error(`Request was aborted: ${url}`);
+          logger.error(`Request was aborted: ${url}`);
         }
       }
 
@@ -213,8 +259,181 @@ class ApiClient {
     });
   }
 
-  async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
-    return this.request<T>(endpoint, { method: "DELETE" });
+  async delete<T>(
+    endpoint: string,
+    options?: RequestInit
+  ): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, { method: "DELETE", ...options });
+  }
+
+  // Verificar se é um endpoint de dados que pode funcionar sem autenticação
+  private isDataEndpoint(endpoint: string): boolean {
+    const dataEndpoints = [
+      "/PessoaFisica",
+      "/PessoaJuridica",
+      "/Usuario",
+      "/Cliente",
+      "/Consultor",
+      "/Filial",
+      "/Contrato",
+    ];
+    return dataEndpoints.some((dataEndpoint) =>
+      endpoint.startsWith(dataEndpoint)
+    );
+  }
+
+  // Fazer requisição sem headers de autenticação
+  private async requestWithoutAuth<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<ApiResponse<T>> {
+    const url = `${this.baseUrl}${endpoint}`;
+
+    try {
+      const config: RequestInit = {
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "X-Skip-Auth": "true", // Header para indicar ao backend que pule autenticação
+          ...options.headers,
+        },
+        ...options,
+      };
+
+      logger.log("🔄 Fazendo requisição sem autenticação:", url);
+      const response = await fetch(url, config);
+
+      if (!response.ok) {
+        return {
+          error: `HTTP error! status: ${response.status}`,
+          status: response.status,
+        };
+      }
+
+      const responseText = await response.text();
+      let data = null;
+
+      if (responseText) {
+        try {
+          data = JSON.parse(responseText);
+        } catch (error) {
+          logger.error("Erro ao fazer parse JSON:", error);
+        }
+      }
+
+      return { data, status: response.status };
+    } catch (error) {
+      logger.error("Erro na requisição sem auth:", error);
+      return { error: "Network error", status: 0 };
+    }
+  }
+
+  // Método para streaming de respostas (SSE - Server-Sent Events)
+  async stream(
+    endpoint: string,
+    data: any,
+    onChunk: (chunk: string) => void,
+    onComplete?: (fullResponse: string) => void,
+    onError?: (error: Error) => void
+  ): Promise<void> {
+    const url = `${this.baseUrl}${endpoint}`;
+
+    try {
+      const token =
+        typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      const user =
+        typeof window !== "undefined" ? localStorage.getItem("user") : null;
+
+      let usuarioId = null;
+      if (user) {
+        try {
+          const userData = JSON.parse(user);
+          usuarioId =
+            userData.UsuarioId ||
+            userData.usuarioId ||
+            userData.id ||
+            userData.Id ||
+            userData.userId;
+        } catch (e) {
+          logger.warn("Erro ao fazer parse do usuário:", e);
+        }
+      }
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+          ...(token && { Authorization: `Bearer ${token}` }),
+          ...(usuarioId && { "X-Usuario-Id": usuarioId.toString() }),
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("ReadableStream not supported");
+      }
+
+      const decoder = new TextDecoder();
+      let fullResponse = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) {
+          if (onComplete) {
+            onComplete(fullResponse);
+          }
+          break;
+        }
+
+        const chunk = decoder.decode(value, { stream: true });
+
+        // Parse SSE format (data: {...}\n\n)
+        const lines = chunk.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const jsonStr = line.slice(6);
+            if (jsonStr === "[DONE]") {
+              continue;
+            }
+            try {
+              const parsed = JSON.parse(jsonStr);
+              if (parsed.content) {
+                fullResponse += parsed.content;
+                onChunk(parsed.content);
+              } else if (parsed.delta?.content) {
+                fullResponse += parsed.delta.content;
+                onChunk(parsed.delta.content);
+              } else if (typeof parsed === "string") {
+                fullResponse += parsed;
+                onChunk(parsed);
+              }
+            } catch {
+              // Se não for JSON, trata como texto puro
+              if (jsonStr.trim()) {
+                fullResponse += jsonStr;
+                onChunk(jsonStr);
+              }
+            }
+          } else if (line.trim() && !line.startsWith(":")) {
+            // Texto puro (não SSE)
+            fullResponse += line;
+            onChunk(line);
+          }
+        }
+      }
+    } catch (error) {
+      logger.error("Erro no streaming:", error);
+      if (onError) {
+        onError(error instanceof Error ? error : new Error("Streaming error"));
+      }
+    }
   }
 }
 

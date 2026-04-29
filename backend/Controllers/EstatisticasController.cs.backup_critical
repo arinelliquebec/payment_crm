@@ -1,0 +1,299 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using CrmArrighi.Data;
+using CrmArrighi.Models;
+using CrmArrighi.Services;
+
+namespace CrmArrighi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class EstatisticasController : ControllerBase
+    {
+        private readonly CrmArrighiContext _context;
+        private readonly IAuthorizationService _authorizationService;
+        private readonly ILogger<EstatisticasController> _logger;
+
+        public EstatisticasController(
+            CrmArrighiContext context,
+            IAuthorizationService authorizationService,
+            ILogger<EstatisticasController> logger)
+        {
+            _context = context;
+            _authorizationService = authorizationService;
+            _logger = logger;
+        }
+
+        // GET: api/Estatisticas/receita
+        [HttpGet("receita")]
+        public async Task<ActionResult<object>> GetReceita()
+        {
+            try
+            {
+                Console.WriteLine("🔍 GetReceita: Iniciando busca de receita");
+
+                // Obter ID do usuário logado
+                var usuarioId = GetCurrentUserId();
+                if (usuarioId == null)
+                {
+                    Console.WriteLine("❌ GetReceita: Usuário não identificado");
+                    return Unauthorized("Usuário não autenticado");
+                }
+
+                Console.WriteLine($"🔍 GetReceita: Usuário identificado: {usuarioId}");
+
+                var hoje = DateTime.Today;
+                var inicioMes = new DateTime(hoje.Year, hoje.Month, 1);
+                var inicioAno = new DateTime(hoje.Year, 1, 1);
+                var mesAnterior = inicioMes.AddMonths(-1);
+                var anoAnterior = new DateTime(hoje.Year - 1, 1, 1);
+
+                // Calcular receita baseada nos contratos
+                var receitaContratos = await _context.Contratos
+                    .Where(c => c.Ativo)
+                    .GroupBy(c => 1)
+                    .Select(g => new
+                    {
+                        // Receita total dos contratos
+                        ReceitaTotal = g.Sum(c => c.ValorNegociado ?? 0),
+                        ReceitaEntrada = g.Sum(c => c.ValorEntrada ?? 0),
+                        ReceitaParcelas = g.Sum(c => (c.ValorParcela ?? 0) * (c.NumeroParcelas ?? 0)),
+                        ComissaoTotal = g.Sum(c => c.Comissao ?? 0),
+
+                        // Receita do mês atual
+                        ReceitaMesAtual = g.Where(c => c.DataCadastro >= inicioMes).Sum(c => c.ValorNegociado ?? 0),
+                        ReceitaEntradaMesAtual = g.Where(c => c.DataCadastro >= inicioMes).Sum(c => c.ValorEntrada ?? 0),
+
+                        // Receita do ano atual
+                        ReceitaAnoAtual = g.Where(c => c.DataCadastro >= inicioAno).Sum(c => c.ValorNegociado ?? 0),
+
+                        // Receita do mês anterior para comparação
+                        ReceitaMesAnterior = g.Where(c => c.DataCadastro >= mesAnterior && c.DataCadastro < inicioMes).Sum(c => c.ValorNegociado ?? 0),
+
+                        // Contratos por situação
+                        ContratosLeed = g.Count(c => c.Situacao == "Leed"),
+                        ContratosProspecto = g.Count(c => c.Situacao == "Prospecto"),
+                        ContratosEnviado = g.Count(c => c.Situacao == "Contrato Enviado"),
+                        ContratosAssinado = g.Count(c => c.Situacao == "Contrato Assinado"),
+                        ContratosFechados = g.Count(c => c.Situacao == "Contrato Assinado" && c.DataFechamentoContrato.HasValue),
+
+                        // Contratos do mês
+                        ContratosMesAtual = g.Count(c => c.DataCadastro >= inicioMes),
+                        ContratosAnoAtual = g.Count(c => c.DataCadastro >= inicioAno)
+                    })
+                    .FirstOrDefaultAsync();
+
+                // Calcular receita baseada nos boletos
+                var receitaBoletos = await _context.Boletos
+                    .Where(b => b.Ativo)
+                    .GroupBy(b => 1)
+                    .Select(g => new
+                    {
+                        // Valores dos boletos
+                        ValorTotalBoletos = g.Sum(b => b.NominalValue),
+                        ValorBoletosLiquidados = g.Where(b => b.Status == "LIQUIDADO").Sum(b => b.NominalValue),
+                        ValorBoletosPendentes = g.Where(b => b.Status == "PENDENTE" || b.Status == "REGISTRADO").Sum(b => b.NominalValue),
+                        ValorBoletosVencidos = g.Where(b => b.Status == "VENCIDO").Sum(b => b.NominalValue),
+
+                        // Boletos do mês
+                        BoletosMesAtual = g.Count(b => b.DataCadastro >= inicioMes),
+                        ValorBoletosMesAtual = g.Where(b => b.DataCadastro >= inicioMes).Sum(b => b.NominalValue),
+
+                        // Boletos do ano
+                        BoletosAnoAtual = g.Count(b => b.DataCadastro >= inicioAno),
+                        ValorBoletosAnoAtual = g.Where(b => b.DataCadastro >= inicioAno).Sum(b => b.NominalValue)
+                    })
+                    .FirstOrDefaultAsync();
+
+                // Calcular crescimento
+                var crescimentoMes = 0m;
+                var crescimentoAno = 0m;
+
+                if (receitaContratos?.ReceitaMesAnterior > 0)
+                {
+                    crescimentoMes = ((receitaContratos.ReceitaMesAtual - receitaContratos.ReceitaMesAnterior) / receitaContratos.ReceitaMesAnterior) * 100;
+                }
+
+                // Calcular métricas de performance
+                var taxaConversao = 0m;
+                if (receitaContratos?.ContratosLeed > 0)
+                {
+                    taxaConversao = (decimal)receitaContratos.ContratosFechados / (receitaContratos.ContratosLeed + receitaContratos.ContratosProspecto) * 100;
+                }
+
+                var resultado = new
+                {
+                    // Receita geral
+                    ReceitaTotal = receitaContratos?.ReceitaTotal ?? 0,
+                    ReceitaEntrada = receitaContratos?.ReceitaEntrada ?? 0,
+                    ReceitaParcelas = receitaContratos?.ReceitaParcelas ?? 0,
+                    ComissaoTotal = receitaContratos?.ComissaoTotal ?? 0,
+
+                    // Receita por período
+                    ReceitaMesAtual = receitaContratos?.ReceitaMesAtual ?? 0,
+                    ReceitaAnoAtual = receitaContratos?.ReceitaAnoAtual ?? 0,
+                    CrescimentoMes = Math.Round(crescimentoMes, 2),
+
+                    // Boletos
+                    ValorTotalBoletos = receitaBoletos?.ValorTotalBoletos ?? 0,
+                    ValorBoletosLiquidados = receitaBoletos?.ValorBoletosLiquidados ?? 0,
+                    ValorBoletosPendentes = receitaBoletos?.ValorBoletosPendentes ?? 0,
+                    ValorBoletosVencidos = receitaBoletos?.ValorBoletosVencidos ?? 0,
+
+                    // Contratos
+                    TotalContratos = (receitaContratos?.ContratosLeed ?? 0) +
+                                   (receitaContratos?.ContratosProspecto ?? 0) +
+                                   (receitaContratos?.ContratosEnviado ?? 0) +
+                                   (receitaContratos?.ContratosAssinado ?? 0),
+                    ContratosFechados = receitaContratos?.ContratosFechados ?? 0,
+                    ContratosMesAtual = receitaContratos?.ContratosMesAtual ?? 0,
+                    ContratosAnoAtual = receitaContratos?.ContratosAnoAtual ?? 0,
+
+                    // Boletos por período
+                    BoletosMesAtual = receitaBoletos?.BoletosMesAtual ?? 0,
+                    BoletosAnoAtual = receitaBoletos?.BoletosAnoAtual ?? 0,
+                    ValorBoletosMesAtual = receitaBoletos?.ValorBoletosMesAtual ?? 0,
+                    ValorBoletosAnoAtual = receitaBoletos?.ValorBoletosAnoAtual ?? 0,
+
+                    // Métricas de performance
+                    TaxaConversao = Math.Round(taxaConversao, 2),
+                    ReceitaMediaPorContrato = receitaContratos?.ContratosAnoAtual > 0 ?
+                        Math.Round((receitaContratos.ReceitaAnoAtual / receitaContratos.ContratosAnoAtual), 2) : 0,
+
+                    // Status dos contratos
+                    ContratosPorSituacao = new
+                    {
+                        Leed = receitaContratos?.ContratosLeed ?? 0,
+                        Prospecto = receitaContratos?.ContratosProspecto ?? 0,
+                        Enviado = receitaContratos?.ContratosEnviado ?? 0,
+                        Assinado = receitaContratos?.ContratosAssinado ?? 0
+                    }
+                };
+
+                _logger.LogInformation($"Receita calculada: Total={resultado.ReceitaTotal}, Mês={resultado.ReceitaMesAtual}, Ano={resultado.ReceitaAnoAtual}");
+
+                return Ok(resultado);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao calcular receita");
+                return StatusCode(500, "Erro interno do servidor");
+            }
+        }
+
+        // GET: api/Estatisticas/test
+        [HttpGet("test")]
+        public ActionResult<object> GetTest()
+        {
+            try
+            {
+                Console.WriteLine("🔍 GetTest: Testando autenticação");
+
+                var usuarioId = GetCurrentUserId();
+                var headers = Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
+
+                return Ok(new
+                {
+                    UsuarioId = usuarioId,
+                    Headers = headers,
+                    Message = usuarioId.HasValue ? "Usuário autenticado" : "Usuário não autenticado",
+                    Timestamp = DateTime.Now
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro no teste de autenticação");
+                return StatusCode(500, "Erro interno do servidor");
+            }
+        }
+
+        // GET: api/Estatisticas/dashboard
+        [HttpGet("dashboard")]
+        public async Task<ActionResult<object>> GetDashboardCompleto()
+        {
+            try
+            {
+                var usuarioId = GetCurrentUserId();
+                if (usuarioId == null)
+                {
+                    return Unauthorized("Usuário não autenticado");
+                }
+
+                var hoje = DateTime.Today;
+                var inicioMes = new DateTime(hoje.Year, hoje.Month, 1);
+
+                // Estatísticas gerais
+                var stats = await _context.Contratos
+                    .Where(c => c.Ativo)
+                    .GroupBy(c => 1)
+                    .Select(g => new
+                    {
+                        TotalContratos = g.Count(),
+                        ContratosMesAtual = g.Count(c => c.DataCadastro >= inicioMes),
+                        ReceitaTotal = g.Sum(c => c.ValorNegociado ?? 0),
+                        ReceitaMesAtual = g.Where(c => c.DataCadastro >= inicioMes).Sum(c => c.ValorNegociado ?? 0),
+                        ContratosFechados = g.Count(c => c.Situacao == "Contrato Assinado" && c.DataFechamentoContrato.HasValue),
+                        ContratosPendentes = g.Count(c => c.Situacao != "Contrato Assinado" && c.Situacao != "Sem Interesse")
+                    })
+                    .FirstOrDefaultAsync();
+
+                // Estatísticas de boletos
+                var boletosStats = await _context.Boletos
+                    .Where(b => b.Ativo)
+                    .GroupBy(b => 1)
+                    .Select(g => new
+                    {
+                        TotalBoletos = g.Count(),
+                        BoletosLiquidados = g.Count(b => b.Status == "LIQUIDADO"),
+                        ValorLiquidado = g.Where(b => b.Status == "LIQUIDADO").Sum(b => b.NominalValue),
+                        ValorPendente = g.Where(b => b.Status == "PENDENTE" || b.Status == "REGISTRADO").Sum(b => b.NominalValue)
+                    })
+                    .FirstOrDefaultAsync();
+
+                var resultado = new
+                {
+                    Contratos = stats ?? new { TotalContratos = 0, ContratosMesAtual = 0, ReceitaTotal = 0m, ReceitaMesAtual = 0m, ContratosFechados = 0, ContratosPendentes = 0 },
+                    Boletos = boletosStats ?? new { TotalBoletos = 0, BoletosLiquidados = 0, ValorLiquidado = 0m, ValorPendente = 0m },
+                    DataAtualizacao = DateTime.Now
+                };
+
+                return Ok(resultado);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao gerar dashboard completo");
+                return StatusCode(500, "Erro interno do servidor");
+            }
+        }
+
+        private int? GetCurrentUserId()
+        {
+            // Obter ID do usuário do header (conforme implementação do sistema)
+            var usuarioIdHeader = Request.Headers["X-Usuario-Id"].FirstOrDefault();
+            if (int.TryParse(usuarioIdHeader, out int usuarioId))
+            {
+                Console.WriteLine($"🔍 GetCurrentUserId: Usuário identificado via header: {usuarioId}");
+                return usuarioId;
+            }
+
+            // Fallback: tentar obter do JWT token se disponível
+            var userIdClaim = User.FindFirst("userId");
+            if (userIdClaim != null && int.TryParse(userIdClaim.Value, out int userIdFromClaim))
+            {
+                Console.WriteLine($"🔍 GetCurrentUserId: Usuário identificado via JWT: {userIdFromClaim}");
+                return userIdFromClaim;
+            }
+
+            // Fallback: tentar obter do NameIdentifier
+            var nameIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (nameIdClaim != null && int.TryParse(nameIdClaim.Value, out int nameId))
+            {
+                Console.WriteLine($"🔍 GetCurrentUserId: Usuário identificado via NameIdentifier: {nameId}");
+                return nameId;
+            }
+
+            Console.WriteLine($"❌ GetCurrentUserId: Nenhum usuário identificado. Headers: {string.Join(", ", Request.Headers.Select(h => $"{h.Key}={h.Value}"))}");
+            return null;
+        }
+    }
+}

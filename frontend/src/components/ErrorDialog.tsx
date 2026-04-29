@@ -41,7 +41,7 @@ export default function ErrorDialog({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[9999] overflow-y-auto">
+      <div className="fixed inset-0 z-[99999] overflow-y-auto">
         {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}

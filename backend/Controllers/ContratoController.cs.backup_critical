@@ -1,0 +1,856 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using CrmArrighi.Data;
+using CrmArrighi.Models;
+using CrmArrighi.Services;
+
+namespace CrmArrighi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class ContratoController : ControllerBase
+    {
+        private readonly CrmArrighiContext _context;
+        private readonly IAuthorizationService _authorizationService;
+
+        public ContratoController(CrmArrighiContext context, IAuthorizationService authorizationService)
+        {
+            _context = context;
+            _authorizationService = authorizationService;
+        }
+
+        // GET: api/Contrato
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<Contrato>>> GetContratos()
+        {
+            try
+            {
+                Console.WriteLine("🔍 GetContratos: Buscando contratos reais no banco de dados");
+
+                // Obter ID do usuário logado
+                var usuarioId = GetCurrentUserId();
+                if (usuarioId == null)
+                {
+                    Console.WriteLine("❌ GetContratos: Usuário não identificado");
+                    return Unauthorized("Usuário não autenticado");
+                }
+
+                Console.WriteLine($"🔍 GetContratos: Usuário identificado: {usuarioId}");
+
+                // Buscar informações do usuário para debug
+                var usuario = await _authorizationService.GetUsuarioAsync(usuarioId.Value);
+                if (usuario == null)
+                {
+                    Console.WriteLine($"❌ GetContratos: Usuário {usuarioId} não encontrado no banco");
+                    return Unauthorized("Usuário não encontrado");
+                }
+
+                Console.WriteLine($"🔍 GetContratos: Usuário: {usuario.Login}, Grupo: {usuario.GrupoAcesso?.Nome}, ConsultorId: {usuario.ConsultorId}");
+
+                // Buscar contratos base com includes
+                var contratosQuery = _context.Contratos
+                    .Include(c => c.Cliente)
+                        .ThenInclude(cl => cl.PessoaFisica)
+                    .Include(c => c.Cliente)
+                        .ThenInclude(cl => cl.PessoaJuridica)
+                    .Include(c => c.Consultor)
+                        .ThenInclude(co => co.PessoaFisica)
+                    .Include(c => c.Consultor)
+                        .ThenInclude(co => co.Filial)
+                    .Where(c => c.Ativo);
+
+                // Aplicar filtro de autorização baseado no grupo do usuário
+                var contratosFiltrados = await _authorizationService.FilterContratosByUserAsync(usuarioId.Value, contratosQuery);
+                var contratos = await contratosFiltrados.ToListAsync();
+
+                Console.WriteLine($"✅ GetContratos: Encontrados {contratos.Count} contratos para o usuário {usuarioId} (Grupo: {usuario.GrupoAcesso?.Nome})");
+
+                // Log detalhado dos contratos para debug
+                foreach (var contrato in contratos.Take(3)) // Log apenas os primeiros 3
+                {
+                    Console.WriteLine($"🔍 Contrato {contrato.Id}: DataUltimoContato={contrato.DataUltimoContato}, DataProximoContato={contrato.DataProximoContato}");
+                    Console.WriteLine($"🔍 Contrato {contrato.Id}: TipoServico={contrato.TipoServico}, DataFechamentoContrato={contrato.DataFechamentoContrato}");
+                    Console.WriteLine($"🔍 Contrato {contrato.Id}: ValorEntrada={contrato.ValorEntrada}, ValorParcela={contrato.ValorParcela}, NumeroParcelas={contrato.NumeroParcelas}");
+                    Console.WriteLine($"🔍 Contrato {contrato.Id}: Comissão={contrato.Comissao}, AnexoDocumento={contrato.AnexoDocumento}");
+                    Console.WriteLine($"🔍 Contrato {contrato.Id}: Pendências={contrato.Pendencias}");
+                }
+
+                return Ok(contratos);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ GetContratos: Erro ao buscar contratos: {ex.Message}");
+                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+            }
+        }
+
+        // GET: api/Contrato/5
+        [HttpGet("{id}")]
+        public async Task<ActionResult<Contrato>> GetContrato(int id)
+        {
+            try
+            {
+                // Obter ID do usuário logado
+                var usuarioId = GetCurrentUserId();
+                if (usuarioId == null)
+                {
+                    return Unauthorized("Usuário não autenticado");
+                }
+
+                // Verificar se o usuário pode visualizar este contrato
+                var canView = await _authorizationService.CanViewContratoAsync(usuarioId.Value, id);
+                if (!canView)
+                {
+                    return Forbid("Você não tem permissão para visualizar este contrato");
+                }
+
+                // Buscar o contrato com todos os dados relacionados
+                var contrato = await _context.Contratos
+                    .Include(c => c.Cliente)
+                        .ThenInclude(cl => cl.PessoaFisica)
+                    .Include(c => c.Cliente)
+                        .ThenInclude(cl => cl.PessoaJuridica)
+                    .Include(c => c.Consultor)
+                        .ThenInclude(co => co.PessoaFisica)
+                    .Include(c => c.Consultor)
+                        .ThenInclude(co => co.Filial)
+                    .FirstOrDefaultAsync(c => c.Id == id && c.Ativo);
+
+                if (contrato == null)
+                {
+                    return NotFound($"Contrato com ID {id} não encontrado");
+                }
+
+                // Log detalhado para debug de TODOS os campos
+                Console.WriteLine($"🔍 GetContrato {id} - DADOS COMPLETOS:");
+                Console.WriteLine($"  TipoServico: '{contrato.TipoServico}'");
+                Console.WriteLine($"  DataFechamentoContrato: '{contrato.DataFechamentoContrato}'");
+                Console.WriteLine($"  ValorEntrada: '{contrato.ValorEntrada}'");
+                Console.WriteLine($"  ValorParcela: '{contrato.ValorParcela}'");
+                Console.WriteLine($"  NumeroParcelas: '{contrato.NumeroParcelas}'");
+                Console.WriteLine($"  PrimeiroVencimento: '{contrato.PrimeiroVencimento}'");
+                Console.WriteLine($"  Comissão: '{contrato.Comissao}'");
+                Console.WriteLine($"  AnexoDocumento: '{contrato.AnexoDocumento}'");
+                Console.WriteLine($"  Pendencias: '{contrato.Pendencias}'");
+                Console.WriteLine($"  NumeroPasta: '{contrato.NumeroPasta}'");
+                Console.WriteLine($"  ObjetoContrato: '{contrato.ObjetoContrato}'");
+                Console.WriteLine($"  ValorDevido: '{contrato.ValorDevido}'");
+                Console.WriteLine($"  Situacao: '{contrato.Situacao}'");
+
+                // Verificar se há problemas na serialização
+                try
+                {
+                    var jsonResult = System.Text.Json.JsonSerializer.Serialize(contrato, new System.Text.Json.JsonSerializerOptions
+                    {
+                        ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles,
+                        WriteIndented = true,
+                        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+                    });
+
+                    Console.WriteLine($"🔍 GetContrato {id} - JSON SERIALIZADO:");
+                    Console.WriteLine(jsonResult.Substring(0, Math.Min(1000, jsonResult.Length)));
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"🔍 GetContrato {id} - ERRO NA SERIALIZAÇÃO: {ex.Message}");
+                }
+
+                return Ok(contrato);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+            }
+        }
+
+        // GET: api/Contrato/cliente/5
+        [HttpGet("cliente/{clienteId}")]
+        public async Task<ActionResult<IEnumerable<Contrato>>> GetContratosPorCliente(int clienteId)
+        {
+            try
+            {
+                // Mock data para desenvolvimento
+                var mockContratos = new List<Contrato>
+                {
+                    new Contrato
+                    {
+                        Id = 1,
+                        ClienteId = clienteId,
+                        Cliente = new Cliente
+                        {
+                            Id = clienteId,
+                            TipoPessoa = "Fisica",
+                            PessoaFisicaId = 1,
+                            PessoaFisica = new PessoaFisica
+                            {
+                                Id = 1,
+                                Nome = "João Silva",
+                                Cpf = "12345678901"
+                            },
+                            FilialId = 5
+                        },
+                        ConsultorId = 1,
+                        Consultor = new Consultor
+                        {
+                            Id = 1,
+                            PessoaFisicaId = 1,
+                            PessoaFisica = new PessoaFisica
+                            {
+                                Id = 1,
+                                Nome = "Maria Santos",
+                                Cpf = "98765432100"
+                            },
+                            FilialId = 1
+                        },
+                        Situacao = "Leed",
+                        DataUltimoContato = DateTime.Now.AddDays(-2),
+                        DataProximoContato = DateTime.Now.AddDays(5),
+                        ValorDevido = 50000.00m,
+                        ValorNegociado = 45000.00m,
+                        Observacoes = "Cliente interessado em plano empresarial",
+                        DataCadastro = DateTime.Now.AddDays(-10)
+                    }
+                };
+
+                return Ok(mockContratos);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+            }
+        }
+
+        // GET: api/Contrato/debug-usuario
+        [HttpGet("debug-usuario")]
+        public async Task<ActionResult<object>> DebugUsuario()
+        {
+            try
+            {
+                var usuarioId = GetCurrentUserId();
+                if (usuarioId == null)
+                {
+                    return Ok(new {
+                        error = "Usuário não identificado",
+                        headers = Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString())
+                    });
+                }
+
+                var usuario = await _authorizationService.GetUsuarioAsync(usuarioId.Value);
+                if (usuario == null)
+                {
+                    return Ok(new {
+                        error = $"Usuário {usuarioId} não encontrado no banco",
+                        usuarioId = usuarioId
+                    });
+                }
+
+                // Buscar contratos totais e filtrados para comparação
+                var totalContratos = await _context.Contratos.Where(c => c.Ativo).CountAsync();
+                var contratosFiltrados = await _authorizationService.FilterContratosByUserAsync(usuarioId.Value, _context.Contratos.Where(c => c.Ativo));
+                var contratosFiltradosCount = await contratosFiltrados.CountAsync();
+
+                return Ok(new {
+                    usuario = new {
+                        id = usuario.Id,
+                        login = usuario.Login,
+                        email = usuario.Email,
+                        grupoAcessoId = usuario.GrupoAcessoId,
+                        grupoAcessoNome = usuario.GrupoAcesso?.Nome,
+                        consultorId = usuario.ConsultorId,
+                        filialId = usuario.FilialId,
+                        ativo = usuario.Ativo
+                    },
+                    contratos = new {
+                        total = totalContratos,
+                        filtrados = contratosFiltradosCount,
+                        diferenca = totalContratos - contratosFiltradosCount
+                    },
+                    headers = Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString())
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message, stackTrace = ex.StackTrace });
+            }
+        }
+
+        // GET: api/Contrato/meus-contratos
+        [HttpGet("meus-contratos")]
+        public async Task<ActionResult<IEnumerable<Contrato>>> GetMeusContratos()
+        {
+            try
+            {
+                // Obter ID do usuário logado
+                var usuarioId = GetCurrentUserId();
+                if (usuarioId == null)
+                {
+                    return Unauthorized("Usuário não autenticado");
+                }
+
+                // Obter ID do consultor do usuário
+                var usuario = await _authorizationService.GetUsuarioAsync(usuarioId.Value);
+                if (usuario?.ConsultorId == null)
+                {
+                    return Forbid("Usuário não está vinculado a um consultor");
+                }
+
+                // Buscar contratos do consultor com filtro de autorização
+                var contratosQuery = _context.Contratos
+                    .Include(c => c.Cliente)
+                        .ThenInclude(cl => cl.PessoaFisica)
+                    .Include(c => c.Cliente)
+                        .ThenInclude(cl => cl.PessoaJuridica)
+                    .Include(c => c.Consultor)
+                        .ThenInclude(co => co.PessoaFisica)
+                    .Include(c => c.Consultor)
+                        .ThenInclude(co => co.Filial)
+                    .Where(c => c.ConsultorId == usuario.ConsultorId && c.Ativo);
+
+                // Aplicar filtro de autorização
+                var contratosFiltrados = await _authorizationService.FilterContratosByUserAsync(usuarioId.Value, contratosQuery);
+                var contratos = await contratosFiltrados.ToListAsync();
+
+                Console.WriteLine($"✅ GetMeusContratos: Encontrados {contratos.Count} contratos para o consultor {usuario.ConsultorId}");
+
+                return Ok(contratos);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+            }
+        }
+
+        // GET: api/Contrato/consultor/5
+        [HttpGet("consultor/{consultorId}")]
+        public async Task<ActionResult<IEnumerable<Contrato>>> GetContratosPorConsultor(int consultorId)
+        {
+            try
+            {
+                // Obter ID do usuário logado
+                var usuarioId = GetCurrentUserId();
+                if (usuarioId == null)
+                {
+                    return Unauthorized("Usuário não autenticado");
+                }
+
+                // Verificar se o usuário pode visualizar consultores
+                var canViewConsultor = await _authorizationService.CanViewConsultorAsync(usuarioId.Value, consultorId);
+                if (!canViewConsultor)
+                {
+                    return Forbid("Você não tem permissão para visualizar contratos deste consultor");
+                }
+
+                // Buscar contratos do consultor com filtro de autorização
+                var contratosQuery = _context.Contratos
+                    .Include(c => c.Cliente)
+                        .ThenInclude(cl => cl.PessoaFisica)
+                    .Include(c => c.Cliente)
+                        .ThenInclude(cl => cl.PessoaJuridica)
+                    .Include(c => c.Consultor)
+                        .ThenInclude(co => co.PessoaFisica)
+                    .Include(c => c.Consultor)
+                        .ThenInclude(co => co.Filial)
+                    .Where(c => c.ConsultorId == consultorId && c.Ativo);
+
+                // Aplicar filtro de autorização
+                var contratosFiltrados = await _authorizationService.FilterContratosByUserAsync(usuarioId.Value, contratosQuery);
+                var contratos = await contratosFiltrados.ToListAsync();
+
+                return Ok(contratos);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+            }
+        }
+
+        // GET: api/Contrato/situacao/Leed
+        [HttpGet("situacao/{situacao}")]
+        public async Task<ActionResult<IEnumerable<Contrato>>> GetContratosPorSituacao(string situacao)
+        {
+            try
+            {
+                // Mock data para desenvolvimento
+                var mockContratos = new List<Contrato>
+                {
+                    new Contrato
+                    {
+                        Id = 1,
+                        ClienteId = 1,
+                        Cliente = new Cliente
+                        {
+                            Id = 1,
+                            TipoPessoa = "Fisica",
+                            PessoaFisicaId = 1,
+                            PessoaFisica = new PessoaFisica
+                            {
+                                Id = 1,
+                                Nome = "João Silva",
+                                Cpf = "12345678901"
+                            },
+                            FilialId = 5
+                        },
+                        ConsultorId = 1,
+                        Consultor = new Consultor
+                        {
+                            Id = 1,
+                            PessoaFisicaId = 1,
+                            PessoaFisica = new PessoaFisica
+                            {
+                                Id = 1,
+                                Nome = "Maria Santos",
+                                Cpf = "98765432100"
+                            },
+                            FilialId = 1
+                        },
+                        Situacao = situacao,
+                        DataUltimoContato = DateTime.Now.AddDays(-2),
+                        DataProximoContato = DateTime.Now.AddDays(5),
+                        ValorDevido = 50000.00m,
+                        ValorNegociado = 45000.00m,
+                        Observacoes = "Cliente interessado em plano empresarial",
+                        DataCadastro = DateTime.Now.AddDays(-10)
+                    }
+                };
+
+                return Ok(mockContratos);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+            }
+        }
+
+        // POST: api/Contrato
+        [HttpPost]
+        public async Task<IActionResult> CreateContrato(CreateContratoDTO createContratoDTO)
+        {
+            try
+            {
+                // Obter ID do usuário logado
+                var usuarioId = GetCurrentUserId();
+                if (usuarioId == null)
+                {
+                    return Unauthorized("Usuário não autenticado");
+                }
+
+                // Verificar se o usuário pode criar contratos
+                var canCreate = await _authorizationService.HasPermissionAsync(usuarioId.Value, "Contrato", "Incluir");
+                if (!canCreate)
+                {
+                    return Forbid("Você não tem permissão para criar contratos");
+                }
+
+                // Verificar se o usuário pode acessar o consultor especificado
+                var canAccessConsultor = await _authorizationService.CanAccessAsync(usuarioId.Value, "Contrato", "Incluir", consultorId: createContratoDTO.ConsultorId);
+                if (!canAccessConsultor)
+                {
+                    return Forbid("Você não tem permissão para criar contratos para este consultor");
+                }
+
+                // ✅ VALIDAÇÕES DE NEGÓCIO
+                // Validar valores monetários
+                if (createContratoDTO.ValorDevido.HasValue && createContratoDTO.ValorDevido < 0)
+                {
+                    return BadRequest("Valor devido não pode ser negativo");
+                }
+
+                if (createContratoDTO.ValorNegociado.HasValue && createContratoDTO.ValorNegociado < 0)
+                {
+                    return BadRequest("Valor negociado não pode ser negativo");
+                }
+
+                if (createContratoDTO.ValorNegociado.HasValue &&
+                    createContratoDTO.ValorDevido.HasValue &&
+                    createContratoDTO.ValorNegociado > createContratoDTO.ValorDevido)
+                {
+                    return BadRequest("Valor negociado não pode ser maior que valor devido");
+                }
+
+                if (createContratoDTO.Comissao.HasValue && createContratoDTO.Comissao < 0)
+                {
+                    return BadRequest("Comissão não pode ser negativa");
+                }
+
+                if (createContratoDTO.Comissao.HasValue &&
+                    createContratoDTO.ValorNegociado.HasValue &&
+                    createContratoDTO.Comissao > createContratoDTO.ValorNegociado)
+                {
+                    return BadRequest("Comissão não pode ser maior que valor negociado");
+                }
+
+                // Validar parcelas
+                if (createContratoDTO.NumeroParcelas.HasValue && createContratoDTO.NumeroParcelas <= 0)
+                {
+                    return BadRequest("Número de parcelas deve ser maior que zero");
+                }
+
+                if (createContratoDTO.ValorParcela.HasValue && createContratoDTO.ValorParcela <= 0)
+                {
+                    return BadRequest("Valor da parcela deve ser maior que zero");
+                }
+
+                if (createContratoDTO.ValorEntrada.HasValue && createContratoDTO.ValorEntrada < 0)
+                {
+                    return BadRequest("Valor de entrada não pode ser negativo");
+                }
+
+                // Validar soma de parcelas + entrada = valor negociado
+                if (createContratoDTO.NumeroParcelas.HasValue &&
+                    createContratoDTO.NumeroParcelas > 0 &&
+                    createContratoDTO.ValorParcela.HasValue &&
+                    createContratoDTO.ValorNegociado.HasValue)
+                {
+                    var totalParcelas = createContratoDTO.NumeroParcelas.Value * createContratoDTO.ValorParcela.Value;
+                    var valorEntrada = createContratoDTO.ValorEntrada ?? 0;
+                    var totalCalculado = totalParcelas + valorEntrada;
+                    var diferenca = Math.Abs(totalCalculado - createContratoDTO.ValorNegociado.Value);
+
+                    // Permitir diferença de até 0.01 (1 centavo) por questões de arredondamento
+                    if (diferenca > 0.01m)
+                    {
+                        return BadRequest($"Soma das parcelas ({totalParcelas:C}) + entrada ({valorEntrada:C}) = {totalCalculado:C} não corresponde ao valor negociado ({createContratoDTO.ValorNegociado:C})");
+                    }
+                }
+
+                // Validar datas
+                if (createContratoDTO.DataFechamentoContrato.HasValue &&
+                    createContratoDTO.DataFechamentoContrato.Value > DateTime.UtcNow.AddDays(1))
+                {
+                    return BadRequest("Data de fechamento do contrato não pode estar no futuro");
+                }
+
+                if (createContratoDTO.PrimeiroVencimento.HasValue &&
+                    createContratoDTO.DataFechamentoContrato.HasValue &&
+                    createContratoDTO.PrimeiroVencimento.Value < createContratoDTO.DataFechamentoContrato.Value)
+                {
+                    return BadRequest("Data do primeiro vencimento não pode ser anterior à data de fechamento");
+                }
+
+                // Buscar dados reais do cliente e consultor
+                var cliente = await _context.Clientes
+                    .Include(c => c.PessoaFisica)
+                    .Include(c => c.PessoaJuridica)
+                    .FirstOrDefaultAsync(c => c.Id == createContratoDTO.ClienteId);
+
+                if (cliente == null)
+                {
+                    return NotFound($"Cliente com ID {createContratoDTO.ClienteId} não encontrado");
+                }
+
+                var consultor = await _context.Consultores
+                    .Include(c => c.PessoaFisica)
+                    .Include(c => c.Filial)
+                    .FirstOrDefaultAsync(c => c.Id == createContratoDTO.ConsultorId);
+
+                if (consultor == null)
+                {
+                    return NotFound($"Consultor com ID {createContratoDTO.ConsultorId} não encontrado");
+                }
+
+                // ✅ Validar parceiro se fornecido
+                if (createContratoDTO.ParceiroId.HasValue)
+                {
+                    var parceiro = await _context.Parceiros
+                        .FirstOrDefaultAsync(p => p.Id == createContratoDTO.ParceiroId.Value && p.Ativo);
+
+                    if (parceiro == null)
+                    {
+                        return NotFound($"Parceiro com ID {createContratoDTO.ParceiroId.Value} não encontrado ou inativo");
+                    }
+                }
+
+                // Criar contrato real no banco de dados
+                var novoContrato = new Contrato
+                {
+                    ClienteId = createContratoDTO.ClienteId,
+                    ConsultorId = createContratoDTO.ConsultorId,
+                    ParceiroId = createContratoDTO.ParceiroId,
+                    Situacao = createContratoDTO.Situacao,
+                    DataUltimoContato = createContratoDTO.DataUltimoContato ?? DateTime.UtcNow.AddDays(-2),
+                    DataProximoContato = createContratoDTO.DataProximoContato ?? DateTime.UtcNow.AddDays(5),
+                    ValorDevido = createContratoDTO.ValorDevido,
+                    ValorNegociado = createContratoDTO.ValorNegociado,
+                    Observacoes = createContratoDTO.Observacoes,
+
+                    // Novos campos de pagamento e outros
+                    NumeroPasta = createContratoDTO.NumeroPasta,
+                    DataFechamentoContrato = createContratoDTO.DataFechamentoContrato,
+                    TipoServico = createContratoDTO.TipoServico,
+                    ObjetoContrato = createContratoDTO.ObjetoContrato,
+                    Comissao = createContratoDTO.Comissao,
+                    ValorEntrada = createContratoDTO.ValorEntrada,
+                    ValorParcela = createContratoDTO.ValorParcela,
+                    NumeroParcelas = createContratoDTO.NumeroParcelas,
+                    PrimeiroVencimento = createContratoDTO.PrimeiroVencimento,
+                    AnexoDocumento = createContratoDTO.AnexoDocumento,
+                    Pendencias = createContratoDTO.Pendencias,
+
+                    DataCadastro = DateTime.UtcNow, // ✅ Usar UTC para consistência
+                    Ativo = true
+                };
+
+                // Log dos dados que estão sendo salvos
+                Console.WriteLine($"🔧 CreateContrato: Salvando contrato com dados:");
+                Console.WriteLine($"  TipoServico: '{createContratoDTO.TipoServico}'");
+                Console.WriteLine($"  DataFechamentoContrato: '{createContratoDTO.DataFechamentoContrato}'");
+                Console.WriteLine($"  ValorEntrada: '{createContratoDTO.ValorEntrada}'");
+                Console.WriteLine($"  ValorParcela: '{createContratoDTO.ValorParcela}'");
+                Console.WriteLine($"  NumeroParcelas: '{createContratoDTO.NumeroParcelas}'");
+                Console.WriteLine($"  Comissao: '{createContratoDTO.Comissao}'");
+                Console.WriteLine($"  AnexoDocumento: '{createContratoDTO.AnexoDocumento}'");
+                Console.WriteLine($"  Pendencias: '{createContratoDTO.Pendencias}'");
+                Console.WriteLine($"  NumeroPasta: '{createContratoDTO.NumeroPasta}'");
+                Console.WriteLine($"  ObjetoContrato: '{createContratoDTO.ObjetoContrato}'");
+
+                // ✅ Usar transação para garantir atomicidade
+                using var transaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    // Salvar no banco de dados
+                    _context.Contratos.Add(novoContrato);
+                    await _context.SaveChangesAsync();
+
+                    Console.WriteLine($"✅ CreateContrato: Contrato criado com ID {novoContrato.Id} no banco de dados");
+
+                    // Buscar o contrato criado com todos os dados relacionados
+                    var contratoCompleto = await _context.Contratos
+                        .Include(c => c.Cliente)
+                            .ThenInclude(cl => cl.PessoaFisica)
+                        .Include(c => c.Cliente)
+                            .ThenInclude(cl => cl.PessoaJuridica)
+                        .Include(c => c.Consultor)
+                            .ThenInclude(co => co.PessoaFisica)
+                        .Include(c => c.Consultor)
+                            .ThenInclude(co => co.Filial)
+                        .FirstOrDefaultAsync(c => c.Id == novoContrato.Id);
+
+                    if (contratoCompleto == null)
+                    {
+                        Console.WriteLine($"❌ CreateContrato: Erro ao buscar contrato completo após criação");
+                        await transaction.RollbackAsync();
+                        return StatusCode(500, "Erro ao buscar contrato após criação");
+                    }
+
+                    // ✅ Commit da transação apenas se tudo deu certo
+                    await transaction.CommitAsync();
+                    Console.WriteLine($"✅ CreateContrato: Transação commitada com sucesso");
+
+                    return CreatedAtAction(nameof(GetContrato), new { id = contratoCompleto.Id }, contratoCompleto);
+                }
+                catch (Exception innerEx)
+                {
+                    Console.WriteLine($"❌ CreateContrato: Erro durante transação: {innerEx.Message}");
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ CreateContrato: Erro geral: {ex.Message}");
+                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+            }
+        }
+
+        // PUT: api/Contrato/5/situacao
+        [HttpPut("{id}/situacao")]
+        public async Task<IActionResult> UpdateSituacaoContrato(int id, UpdateSituacaoContratoDTO updateDTO)
+        {
+            try
+            {
+                // Obter ID do usuário logado
+                var usuarioId = GetCurrentUserId();
+                if (usuarioId == null)
+                {
+                    return Unauthorized("Usuário não autenticado");
+                }
+
+                // Verificar se o usuário pode editar este contrato
+                var canEdit = await _authorizationService.CanEditContratoAsync(usuarioId.Value, id);
+                if (!canEdit)
+                {
+                    return Forbid("Você não tem permissão para editar este contrato");
+                }
+
+                Console.WriteLine($"🔍 UpdateSituacaoContrato: Buscando contrato com ID {id}");
+
+                // Buscar o contrato existente com todos os dados relacionados
+                var contratoExistente = await _context.Contratos
+                    .Include(c => c.Cliente)
+                        .ThenInclude(cl => cl.PessoaFisica)
+                    .Include(c => c.Cliente)
+                        .ThenInclude(cl => cl.PessoaJuridica)
+                    .Include(c => c.Consultor)
+                        .ThenInclude(co => co.PessoaFisica)
+                    .Include(c => c.Consultor)
+                        .ThenInclude(co => co.Filial)
+                    .FirstOrDefaultAsync(c => c.Id == id && c.Ativo);
+
+                if (contratoExistente == null)
+                {
+                    Console.WriteLine($"❌ UpdateSituacaoContrato: Contrato com ID {id} não encontrado na tabela");
+                    return NotFound($"Contrato com ID {id} não encontrado");
+                }
+
+                Console.WriteLine($"✅ UpdateSituacaoContrato: Contrato encontrado - Cliente: {contratoExistente.Cliente?.PessoaFisica?.Nome ?? contratoExistente.Cliente?.PessoaJuridica?.RazaoSocial ?? "N/A"}, Consultor: {contratoExistente.Consultor?.PessoaFisica?.Nome ?? "N/A"}");
+
+                // Atualizar apenas os campos que podem ser alterados
+                contratoExistente.Situacao = updateDTO.NovaSituacao;
+                contratoExistente.DataUltimoContato = updateDTO.DataUltimoContato;
+                contratoExistente.DataProximoContato = updateDTO.DataProximoContato;
+                contratoExistente.ValorDevido = updateDTO.ValorDevido;
+                contratoExistente.ValorNegociado = updateDTO.ValorNegociado;
+                contratoExistente.Observacoes = updateDTO.Observacoes;
+                contratoExistente.DataAtualizacao = DateTime.Now;
+
+                // Salvar as alterações no banco
+                await _context.SaveChangesAsync();
+
+                // Criar registro no histórico
+                var historico = new HistoricoSituacaoContrato
+                {
+                    ContratoId = id,
+                    SituacaoAnterior = contratoExistente.Situacao, // Usar situação atual antes da mudança
+                    NovaSituacao = updateDTO.NovaSituacao,
+                    MotivoMudanca = updateDTO.MotivoMudanca,
+                    DataMudanca = DateTime.Now
+                };
+
+                _context.HistoricoSituacaoContratos.Add(historico);
+                await _context.SaveChangesAsync();
+
+                return Ok(new { contrato = contratoExistente, historico });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+            }
+        }
+
+        // PUT: api/Contrato/5
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateContrato(int id, CreateContratoDTO updateDTO)
+        {
+            try
+            {
+                // Mock data para desenvolvimento - retornar contrato completo
+                var contrato = new Contrato
+                {
+                    Id = id,
+                    ClienteId = updateDTO.ClienteId,
+                    Cliente = new Cliente
+                    {
+                        Id = updateDTO.ClienteId,
+                        TipoPessoa = "Fisica",
+                        PessoaFisicaId = 1,
+                        PessoaFisica = new PessoaFisica
+                        {
+                            Id = 1,
+                            Nome = "João Silva",
+                            Cpf = "12345678901"
+                        },
+                        FilialId = 5
+                    },
+                    ConsultorId = updateDTO.ConsultorId,
+                    Consultor = new Consultor
+                    {
+                        Id = updateDTO.ConsultorId,
+                        PessoaFisicaId = 1,
+                        PessoaFisica = new PessoaFisica
+                        {
+                            Id = 1,
+                            Nome = "Maria Santos",
+                            Cpf = "98765432100"
+                        },
+                        FilialId = 1
+                    },
+                    Situacao = updateDTO.Situacao,
+                    DataUltimoContato = updateDTO.DataUltimoContato,
+                    DataProximoContato = updateDTO.DataProximoContato,
+                    ValorDevido = updateDTO.ValorDevido,
+                    ValorNegociado = updateDTO.ValorNegociado,
+                    Observacoes = updateDTO.Observacoes,
+                    DataCadastro = DateTime.Now.AddDays(-10),
+                    DataAtualizacao = DateTime.Now
+                };
+
+                return Ok(contrato);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+            }
+        }
+
+        // DELETE: api/Contrato/5
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteContrato(int id)
+        {
+            try
+            {
+                // Obter ID do usuário logado
+                var usuarioId = GetCurrentUserId();
+                if (usuarioId == null)
+                {
+                    return Unauthorized("Usuário não autenticado");
+                }
+
+                // Verificar se o usuário pode excluir este contrato
+                var canDelete = await _authorizationService.CanDeleteContratoAsync(usuarioId.Value, id);
+                if (!canDelete)
+                {
+                    return Forbid("Você não tem permissão para excluir este contrato");
+                }
+
+                // Buscar o contrato
+                var contrato = await _context.Contratos.FirstOrDefaultAsync(c => c.Id == id && c.Ativo);
+                if (contrato == null)
+                {
+                    return NotFound($"Contrato com ID {id} não encontrado");
+                }
+
+                // Marcar como inativo (soft delete)
+                contrato.Ativo = false;
+                contrato.DataAtualizacao = DateTime.Now;
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = $"Contrato {id} removido com sucesso" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Erro interno do servidor: {ex.Message}");
+            }
+        }
+
+        // Método auxiliar para obter o ID do usuário logado
+        private int? GetCurrentUserId()
+        {
+            // Obter ID do usuário do header (conforme implementação do sistema)
+            var usuarioIdHeader = Request.Headers["X-Usuario-Id"].FirstOrDefault();
+            if (int.TryParse(usuarioIdHeader, out int usuarioId))
+            {
+                Console.WriteLine($"🔍 GetCurrentUserId: Usuário identificado via header: {usuarioId}");
+                return usuarioId;
+            }
+
+            // Fallback: tentar obter do JWT token se disponível
+            var userIdClaim = User.FindFirst("userId");
+            if (userIdClaim != null && int.TryParse(userIdClaim.Value, out int userIdFromClaim))
+            {
+                Console.WriteLine($"🔍 GetCurrentUserId: Usuário identificado via JWT: {userIdFromClaim}");
+                return userIdFromClaim;
+            }
+
+            // Fallback: tentar obter do NameIdentifier
+            var nameIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (nameIdClaim != null && int.TryParse(nameIdClaim.Value, out int nameId))
+            {
+                Console.WriteLine($"🔍 GetCurrentUserId: Usuário identificado via NameIdentifier: {nameId}");
+                return nameId;
+            }
+
+            Console.WriteLine($"❌ GetCurrentUserId: Nenhum usuário identificado. Headers: {string.Join(", ", Request.Headers.Select(h => $"{h.Key}={h.Value}"))}");
+            return null;
+        }
+    }
+}

@@ -20,6 +20,15 @@ import {
   XCircle,
   Shield,
   UserCheck,
+  Crown,
+  Receipt,
+  UserCog,
+  Eye as EyeIcon,
+  DollarSign,
+  KeyRound,
+  Mail,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import MainLayout from "@/components/MainLayout";
 import UsuarioForm from "@/components/forms/UsuarioForm";
@@ -27,8 +36,13 @@ import { useUsuario } from "@/hooks/useUsuario";
 import { Usuario, PessoaFisicaOption, PessoaJuridicaOption } from "@/types/api";
 import { cn } from "@/lib/utils";
 import { useForm } from "@/contexts/FormContext";
-import { TableNavigation } from "@/components/TableNavigation";
+import { getApiUrl } from "../../../env.config";
+// import { TableNavigation } from "@/components/TableNavigation"; // Removido - não necessário
+import { PermissionWrapper } from "@/components/permissions";
+import { usePermissions } from "@/hooks/usePermissions";
+import { useAuth } from "@/contexts/AuthContext";
 import { TableSizeToggle } from "@/components/TableSizeToggle";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 function StatusBadge({
   status,
@@ -75,13 +89,13 @@ function TipoPessoaBadge({
   isCompact?: boolean;
 }) {
   const getTipoColor = (tipo: string) => {
-    switch (tipo.toLowerCase()) {
+    switch ((tipo || "").toLowerCase()) {
       case "fisica":
         return "bg-blue-100 text-blue-800 border border-blue-200";
       case "juridica":
         return "bg-purple-100 text-purple-800 border border-purple-200";
       default:
-        return "bg-gray-100 text-gray-800 border border-gray-200";
+        return "bg-gray-100 text-gray-800 border border-neutral-700";
     }
   };
 
@@ -113,15 +127,49 @@ function GrupoAcessoBadge({
   isCompact?: boolean;
 }) {
   const getGrupoColor = (grupo: string) => {
-    switch (grupo.toLowerCase()) {
-      case "admin":
-        return "bg-red-100 text-red-800 border border-red-200";
-      case "gerente":
-        return "bg-blue-100 text-blue-800 border border-blue-200";
+    switch ((grupo || "").toLowerCase()) {
+      case "administrador":
+        return "bg-red-100 text-red-800 border border-red-200 shadow-sm";
+      case "faturamento":
+        return "bg-purple-100 text-purple-800 border border-purple-200 shadow-sm";
+      case "gestor de filial":
+        return "bg-orange-100 text-orange-800 border border-orange-200 shadow-sm";
+      case "consultores":
+        return "bg-blue-100 text-blue-800 border border-blue-200 shadow-sm";
+      case "cobrança e financeiro":
+      case "cobrança/financeiro":
+        return "bg-green-100 text-green-800 border border-green-200 shadow-sm";
+      case "administrativo de filial":
+        return "bg-amber-100 text-amber-800 border border-amber-200 shadow-sm";
       case "usuario":
-        return "bg-green-100 text-green-800 border border-green-200";
+      case "usuário":
+        return "bg-gray-100 text-gray-800 border border-neutral-700 shadow-sm";
       default:
-        return "bg-gray-100 text-gray-800 border border-gray-200";
+        return "bg-neutral-100 text-neutral-800 border border-neutral-200 shadow-sm";
+    }
+  };
+
+  const getGrupoIcon = (grupo: string) => {
+    const iconClass = isCompact ? "w-2 h-2" : "w-3 h-3";
+    switch ((grupo || "").toLowerCase()) {
+      case "administrador":
+        return <Crown className={iconClass} />;
+      case "faturamento":
+        return <Receipt className={iconClass} />;
+      case "gestor de filial":
+        return <UserCog className={iconClass} />;
+      case "consultores":
+        return <UserCheck className={iconClass} />;
+      case "cobrança e financeiro":
+      case "cobrança/financeiro":
+        return <DollarSign className={iconClass} />;
+      case "administrativo de filial":
+        return <EyeIcon className={iconClass} />;
+      case "usuario":
+      case "usuário":
+        return <User className={iconClass} />;
+      default:
+        return <Shield className={iconClass} />;
     }
   };
 
@@ -135,12 +183,8 @@ function GrupoAcessoBadge({
         getGrupoColor(grupo)
       )}
     >
-      <Shield
-        className={
-          isCompact ? "w-2 h-2 mr-0.5" : "w-2 h-2 sm:w-2.5 sm:h-2.5 mr-0.5"
-        }
-      />
-      {grupo}
+      <span className="mr-0.5">{getGrupoIcon(grupo)}</span>
+      {grupo || "Sem grupo"}
     </span>
   );
 }
@@ -184,6 +228,7 @@ function ErrorMessage({
 }
 
 export default function UsuariosPage() {
+  const { refreshPermissions } = useAuth();
   const {
     usuarios,
     loading,
@@ -211,6 +256,11 @@ export default function UsuariosPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<number | null>(
     null
   );
+  const [showResetConfirm, setShowResetConfirm] = useState<number | null>(
+    null
+  );
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState<string | null>(null);
   const [pessoasFisicas, setPessoasFisicas] = useState<PessoaFisicaOption[]>(
     []
   );
@@ -221,6 +271,46 @@ export default function UsuariosPage() {
   const [canScrollRight, setCanScrollRight] = useState(false);
   const tableRef = useRef<HTMLDivElement>(null);
   const [isTableCompact, setIsTableCompact] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
+
+  // Estados para seleção (padrão das outras telas)
+  const [selectedUsuarioId, setSelectedUsuarioId] = useState<number | null>(
+    null
+  );
+
+  // Filtrar usuários (movido para antes dos useEffect)
+  const filteredUsuarios = usuarios.filter((usuario) => {
+    const searchLower = searchTerm.toLowerCase();
+    const matchesSearch =
+      (usuario.login?.toLowerCase() || "").includes(searchLower) ||
+      (usuario.email?.toLowerCase() || "").includes(searchLower) ||
+      (usuario.pessoaFisica?.nome?.toLowerCase() || "").includes(searchLower) ||
+      (usuario.pessoaJuridica?.razaoSocial?.toLowerCase() || "").includes(
+        searchLower
+      );
+
+    const matchesGrupo =
+      !filterGrupo || usuario.grupoAcesso?.nome === filterGrupo;
+    const matchesTipo = !filterTipo || usuario.tipoPessoa === filterTipo;
+    const matchesStatus =
+      !filterStatus ||
+      (filterStatus === "ativo" ? usuario.ativo : !usuario.ativo);
+
+    return matchesSearch && matchesGrupo && matchesTipo && matchesStatus;
+  });
+
+  // Paginação
+  const totalPages = Math.ceil(filteredUsuarios.length / ITEMS_PER_PAGE);
+  const paginatedUsuarios = filteredUsuarios.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
+  // Resetar página quando filtros mudarem
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterGrupo, filterTipo, filterStatus]);
 
   // Carregar dados auxiliares
   useEffect(() => {
@@ -235,28 +325,10 @@ export default function UsuariosPage() {
     loadAuxData();
   }, [fetchPessoasFisicas, fetchPessoasJuridicas]);
 
-  // Filtrar usuários
-  const filteredUsuarios = usuarios.filter((usuario) => {
-    const matchesSearch =
-      usuario.login.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      usuario.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (usuario.pessoaFisica &&
-        usuario.pessoaFisica.nome
-          .toLowerCase()
-          .includes(searchTerm.toLowerCase())) ||
-      (usuario.pessoaJuridica &&
-        usuario.pessoaJuridica.razaoSocial
-          .toLowerCase()
-          .includes(searchTerm.toLowerCase()));
-
-    const matchesGrupo = !filterGrupo || usuario.grupoAcesso === filterGrupo;
-    const matchesTipo = !filterTipo || usuario.tipoPessoa === filterTipo;
-    const matchesStatus =
-      !filterStatus ||
-      (filterStatus === "ativo" ? usuario.ativo : !usuario.ativo);
-
-    return matchesSearch && matchesGrupo && matchesTipo && matchesStatus;
-  });
+  // Limpar seleção quando a lista de usuários mudar
+  useEffect(() => {
+    setSelectedUsuarioId(null);
+  }, [usuarios]);
 
   const handleCreateOrUpdate = async (data: any) => {
     if (editingUsuario) {
@@ -276,14 +348,93 @@ export default function UsuariosPage() {
     const success = await deleteUsuario(id);
     if (success) {
       setShowDeleteConfirm(null);
+      // Limpar seleção se o usuário excluído estava selecionado
+      if (selectedUsuarioId === id) {
+        setSelectedUsuarioId(null);
+      }
     }
   };
 
   const handleCloseForm = () => {
     setShowForm(false);
     setEditingUsuario(null);
+    setSelectedUsuarioId(null);
     clearError();
     closeForm();
+  };
+
+  const handleSelectUsuario = (usuarioId: number) => {
+    setSelectedUsuarioId(selectedUsuarioId === usuarioId ? null : usuarioId);
+  };
+
+  const handleTableRowClick = (usuario: Usuario, event: React.MouseEvent) => {
+    const target = event.target as HTMLElement;
+
+    // Ignorar cliques em botões/ações da linha
+    if (target.closest("button")) return;
+    handleEdit(usuario);
+  };
+
+  const handleViewSelected = () => {
+    if (selectedUsuarioId) {
+      const usuario = usuarios.find((u) => u.id === selectedUsuarioId);
+      if (usuario) {
+        alert(`Visualizando: ${usuario.login}`);
+      }
+    }
+  };
+
+  const handleEditSelected = () => {
+    if (selectedUsuarioId) {
+      const usuario = usuarios.find((u) => u.id === selectedUsuarioId);
+      if (usuario) {
+        handleEdit(usuario);
+      }
+    }
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedUsuarioId) {
+      setShowDeleteConfirm(selectedUsuarioId);
+    }
+  };
+
+  const handleResetPasswordSelected = () => {
+    if (selectedUsuarioId) {
+      setShowResetConfirm(selectedUsuarioId);
+    }
+  };
+
+  const handleResetPassword = async (usuarioId: number) => {
+    setResettingPassword(true);
+    try {
+      const apiUrl = getApiUrl();
+      const response = await fetch(
+        `${apiUrl}/PasswordReset/admin-reset/${usuarioId}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (response.ok) {
+        const usuario = usuarios.find((u) => u.id === usuarioId);
+        const email = usuario?.email || "";
+        setResetSuccess(email);
+        setShowResetConfirm(null);
+        setTimeout(() => setResetSuccess(null), 5000);
+      } else {
+        const error = await response.json();
+        alert(error.message || "Erro ao enviar email de reset de senha");
+      }
+    } catch (error) {
+      console.error("Erro ao resetar senha:", error);
+      alert("Erro ao enviar email de reset de senha");
+    } finally {
+      setResettingPassword(false);
+    }
   };
 
   const handleOpenForm = () => {
@@ -310,8 +461,9 @@ export default function UsuariosPage() {
     total: usuarios.length,
     ativos: usuarios.filter((u) => u.ativo).length,
     inativos: usuarios.filter((u) => !u.ativo).length,
-    administradores: usuarios.filter((u) => u.grupoAcesso === "Administrador")
-      .length,
+    administradores: usuarios.filter(
+      (u) => u.grupoAcesso?.nome === "Administrador"
+    ).length,
   };
 
   const handleScrollLeft = () => {
@@ -352,616 +504,1012 @@ export default function UsuariosPage() {
   }, [usuarios]);
 
   return (
-    <MainLayout>
-      <div className="space-y-4 sm:space-y-5 lg:space-y-6 w-full max-w-none">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 w-full"
-        >
-          <div className="flex items-center space-x-2 sm:space-x-3 lg:space-x-4">
-            <div className="p-1.5 sm:p-2 lg:p-3 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg sm:rounded-xl text-white">
-              <UserCheck className="w-4 h-4 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
-            </div>
-            <div>
-              <h1 className="text-base sm:text-lg lg:text-xl font-bold gradient-text">
-                Usuários
-              </h1>
-              <p className="text-[10px] sm:text-xs text-secondary-600">
-                Gerenciar usuários do sistema
-              </p>
-            </div>
-          </div>
-
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={handleOpenForm}
-            className="btn-mobile flex items-center space-x-1 sm:space-x-2 px-3 sm:px-4 lg:px-6 py-1.5 sm:py-2 lg:py-3 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white rounded-lg sm:rounded-xl font-medium shadow-lg transition-all duration-200 text-[11px] sm:text-xs lg:text-sm"
-          >
-            <Plus className="w-3 h-3 sm:w-4 sm:h-4 lg:w-5 lg:h-5" />
-            <span>Novo Usuário</span>
-          </motion.button>
-        </motion.div>
-
-        {/* Aviso se não há pessoas cadastradas */}
-        {pessoasFisicas.length === 0 && pessoasJuridicas.length === 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-yellow-50 border border-yellow-200 rounded-xl p-4"
-          >
-            <div className="flex items-center space-x-3">
-              <AlertCircle className="w-5 h-5 text-yellow-600" />
-              <p className="text-yellow-800 text-[11px] sm:text-xs">
-                <strong>Atenção:</strong> É necessário ter pelo menos uma pessoa
-                física ou jurídica cadastrada para criar usuários.
-              </p>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Filtros e Busca */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="bg-white/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-4 lg:p-5 shadow-sm border border-secondary-200/50 w-full"
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-3 lg:gap-4 w-full">
-            <div className="sm:col-span-2 relative">
-              <Search className="absolute left-2 sm:left-3 top-1/2 transform -translate-y-1/2 text-secondary-400 w-3.5 h-3.5 sm:w-4 sm:h-4 lg:w-5 lg:h-5" />
-              <input
-                type="text"
-                placeholder="Buscar por login, email ou pessoa..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-7 sm:pl-8 lg:pl-10 pr-3 sm:pr-4 py-1.5 sm:py-2 lg:py-3 bg-secondary-50 border border-secondary-200 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 text-[11px] sm:text-xs lg:text-sm"
-              />
-            </div>
-
-            <select
-              value={filterGrupo}
-              onChange={(e) => setFilterGrupo(e.target.value)}
-              className="px-3 sm:px-4 py-1.5 sm:py-2 lg:py-3 bg-secondary-50 border border-secondary-200 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 text-[11px] sm:text-xs lg:text-sm"
-            >
-              <option value="">Todos os grupos</option>
-              <option value="Administrador">Administrador</option>
-              <option value="Usuario">Usuário</option>
-              <option value="Visualizador">Visualizador</option>
-            </select>
-
-            <select
-              value={filterTipo}
-              onChange={(e) => setFilterTipo(e.target.value)}
-              className="px-3 sm:px-4 py-1.5 sm:py-2 lg:py-3 bg-secondary-50 border border-secondary-200 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 text-[11px] sm:text-xs lg:text-sm"
-            >
-              <option value="">Todos os tipos</option>
-              <option value="Fisica">Pessoa Física</option>
-              <option value="Juridica">Pessoa Jurídica</option>
-            </select>
-
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 sm:px-4 py-1.5 sm:py-2 lg:py-3 bg-secondary-50 border border-secondary-200 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 text-[11px] sm:text-xs lg:text-sm"
-            >
-              <option value="">Todos os status</option>
-              <option value="ativo">Ativo</option>
-              <option value="inativo">Inativo</option>
-            </select>
-          </div>
-        </motion.div>
-
-        {/* Estatísticas */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6"
-        >
-          <div className="bg-white/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-2.5 sm:p-3 lg:p-4 shadow-sm border border-secondary-200/50">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-secondary-600 text-xs sm:text-sm font-medium">
-                  Total de Usuários
-                </p>
-                <p className="text-lg sm:text-xl lg:text-2xl font-bold text-secondary-900">
-                  {stats.total}
-                </p>
-              </div>
-              <div className="p-1.5 sm:p-2 lg:p-3 bg-purple-100 rounded-lg sm:rounded-xl">
-                <UserCheck className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-purple-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-2.5 sm:p-3 lg:p-4 shadow-sm border border-secondary-200/50">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-secondary-600 text-xs sm:text-sm font-medium">
-                  Usuários Ativos
-                </p>
-                <p className="text-lg sm:text-xl lg:text-2xl font-bold text-green-600">
-                  {stats.ativos}
-                </p>
-              </div>
-              <div className="p-1.5 sm:p-2 lg:p-3 bg-green-100 rounded-lg sm:rounded-xl">
-                <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-green-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-2.5 sm:p-3 lg:p-4 shadow-sm border border-secondary-200/50">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-secondary-600 text-xs sm:text-sm font-medium">
-                  Usuários Inativos
-                </p>
-                <p className="text-lg sm:text-xl lg:text-2xl font-bold text-red-600">
-                  {stats.inativos}
-                </p>
-              </div>
-              <div className="p-1.5 sm:p-2 lg:p-3 bg-red-100 rounded-lg sm:rounded-xl">
-                <XCircle className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-red-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-2.5 sm:p-3 lg:p-4 shadow-sm border border-secondary-200/50">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-secondary-600 text-xs sm:text-sm font-medium">
-                  Administradores
-                </p>
-                <p className="text-lg sm:text-xl lg:text-2xl font-bold text-orange-600">
-                  {stats.administradores}
-                </p>
-              </div>
-              <div className="p-1.5 sm:p-2 lg:p-3 bg-orange-100 rounded-lg sm:rounded-xl">
-                <Shield className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-orange-600" />
-              </div>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Tabela ou Estados de Loading/Error */}
-        {error ? (
-          <ErrorMessage message={error} onRetry={fetchUsuarios} />
-        ) : loading ? (
-          <LoadingSpinner />
-        ) : (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="bg-white/80 backdrop-blur-sm rounded-xl sm:rounded-2xl shadow-sm border border-secondary-200/50 overflow-hidden w-full"
-          >
-            <div className="px-3 sm:px-4 lg:px-6 py-2.5 sm:py-3 lg:py-4 border-b border-secondary-200/50">
-              <h3 className="text-sm sm:text-base lg:text-lg font-semibold text-secondary-900">
-                Lista de Usuários ({filteredUsuarios.length} registros)
-              </h3>
-            </div>
-
-            {filteredUsuarios.length === 0 ? (
-              <div className="text-center py-12">
-                <UserCheck className="w-16 h-16 text-secondary-300 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-secondary-900 mb-2">
-                  {searchTerm || filterGrupo || filterTipo || filterStatus
-                    ? "Nenhum resultado encontrado"
-                    : "Nenhum usuário cadastrado"}
+    <ErrorBoundary>
+      <PermissionWrapper
+        modulo="Usuario"
+        acao="Visualizar"
+        fallback={
+          <MainLayout>
+            <div className="flex items-center justify-center h-64">
+              <div className="text-center">
+                <Shield className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  Acesso Negado
                 </h3>
-                <p className="text-secondary-600">
-                  {searchTerm || filterGrupo || filterTipo || filterStatus
-                    ? "Tente ajustar os filtros de busca"
-                    : pessoasFisicas.length === 0 &&
-                      pessoasJuridicas.length === 0
-                    ? "Cadastre primeiro uma pessoa física ou jurídica"
-                    : "Clique em 'Novo Usuário' para começar"}
+                <p className="text-gray-500">
+                  Você não tem permissão para acessar a página de usuários.
                 </p>
               </div>
-            ) : (
-              <div className="w-full">
-                {/* Controles da tabela */}
-                <div className="flex items-center justify-end mb-3">
-                  <TableSizeToggle
-                    isCompact={isTableCompact}
-                    onToggle={() => setIsTableCompact(!isTableCompact)}
-                    pageId="usuarios"
+            </div>
+          </MainLayout>
+        }
+      >
+        <MainLayout>
+          <div className="space-y-4 sm:space-y-5 lg:space-y-6 w-full max-w-none">
+            {/* Header */}
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 w-full"
+            >
+              <div className="flex items-center space-x-2 sm:space-x-3 lg:space-x-4">
+                <div className="p-1.5 sm:p-2 lg:p-3 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg sm:rounded-xl text-white">
+                  <UserCheck className="w-4 h-4 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
+                </div>
+                <div>
+                  <h1 className="text-base sm:text-lg lg:text-xl font-bold gradient-text">
+                    Usuários
+                  </h1>
+                  <p className="text-[10px] sm:text-xs text-secondary-600">
+                    Gerenciar usuários do sistema
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={refreshPermissions}
+                  className="btn-mobile flex items-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-lg font-medium shadow-lg transition-all duration-200 text-[11px] sm:text-xs"
+                  title="Atualizar permissões"
+                >
+                  <Shield className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <span className="hidden sm:inline">Atualizar</span>
+                </motion.button>
+
+                <PermissionWrapper modulo="Usuario" acao="Incluir">
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleOpenForm}
+                    className="btn-mobile flex items-center space-x-1 sm:space-x-2 px-3 sm:px-4 lg:px-6 py-1.5 sm:py-2 lg:py-3 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white rounded-lg sm:rounded-xl font-medium shadow-lg transition-all duration-200 text-[11px] sm:text-xs lg:text-sm"
+                  >
+                    <Plus className="w-3 h-3 sm:w-4 sm:h-4 lg:w-5 lg:h-5" />
+                    <span>Novo Usuário</span>
+                  </motion.button>
+                </PermissionWrapper>
+              </div>
+            </motion.div>
+
+            {/* Barra de ações para item selecionado */}
+            <AnimatePresence>
+              {selectedUsuarioId && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="bg-gray-50 border border-neutral-700 rounded-xl p-3 flex items-center justify-between"
+                >
+                  <div className="flex items-center space-x-3">
+                    <span className="text-sm font-medium text-gray-800">
+                      Usuário selecionado:{" "}
+                      {usuarios.find((u) => u.id === selectedUsuarioId)?.login}
+                    </span>
+                    <button
+                      onClick={() => setSelectedUsuarioId(null)}
+                      className="text-xs text-gray-600 hover:text-gray-800 underline"
+                    >
+                      Limpar seleção
+                    </button>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <PermissionWrapper modulo="Usuario" acao="Editar">
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={handleEditSelected}
+                        className="flex items-center space-x-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors"
+                      >
+                        <Edit className="w-3 h-3" />
+                        <span>Editar</span>
+                      </motion.button>
+                    </PermissionWrapper>
+
+                    <PermissionWrapper modulo="Usuario" acao="Editar">
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={handleResetPasswordSelected}
+                        className="flex items-center space-x-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium transition-colors"
+                        title="Enviar email de reset de senha"
+                      >
+                        <KeyRound className="w-3 h-3" />
+                        <span>Reset Senha</span>
+                      </motion.button>
+                    </PermissionWrapper>
+
+                    <PermissionWrapper modulo="Usuario" acao="Excluir">
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={handleDeleteSelected}
+                        className="flex items-center space-x-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-medium transition-colors"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Excluir</span>
+                      </motion.button>
+                    </PermissionWrapper>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Aviso se não há pessoas cadastradas */}
+            {pessoasFisicas.length === 0 && pessoasJuridicas.length === 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-amber-50 border border-amber-200 rounded-xl p-4"
+              >
+                <div className="flex items-center space-x-3">
+                  <AlertCircle className="w-5 h-5 text-amber-600" />
+                  <p className="text-amber-800 text-[11px] sm:text-xs">
+                    <strong>Atenção:</strong> É necessário ter pelo menos uma
+                    pessoa física ou jurídica cadastrada para criar usuários.
+                  </p>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Filtros e Busca */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="bg-neutral-900/95 backdrop-blur-xl rounded-xl sm:rounded-2xl p-3 sm:p-4 lg:p-5 shadow-sm border border-neutral-800 w-full"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-3 lg:gap-4 w-full">
+                <div className="sm:col-span-2 relative">
+                  <Search className="absolute left-2 sm:left-3 top-1/2 transform -translate-y-1/2 text-amber-500 w-3.5 h-3.5 sm:w-4 sm:h-4 lg:w-5 lg:h-5" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por login, email ou pessoa..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-7 sm:pl-8 lg:pl-10 pr-3 sm:pr-4 py-1.5 sm:py-2 lg:py-3 bg-neutral-800/60 border border-neutral-700 rounded-lg sm:rounded-xl text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all duration-200 text-[11px] sm:text-xs lg:text-sm"
                   />
                 </div>
 
-                <div className="w-full overflow-x-auto">
-                  <div
-                    ref={tableRef}
-                    className="table-responsive table-container overflow-x-auto min-w-full"
-                  >
-                    <table
-                      className={`w-full min-w-[1200px] sm:min-w-[1300px] lg:min-w-[1400px] xl:min-w-[1500px] ${
-                        isTableCompact ? "table-compact" : ""
-                      }`}
+                <select
+                  value={filterGrupo}
+                  onChange={(e) => setFilterGrupo(e.target.value)}
+                  className="px-3 sm:px-4 py-1.5 sm:py-2 lg:py-3 bg-neutral-800/60 border border-neutral-700 rounded-lg sm:rounded-xl text-neutral-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all duration-200 text-[11px] sm:text-xs lg:text-sm [&>option]:bg-neutral-900 [&>option]:text-neutral-100"
+                  style={{ colorScheme: "dark" }}
+                >
+                  <option value="">Todos os grupos</option>
+                  <option value="Administrador">Administrador</option>
+                  <option value="Usuario">Usuário</option>
+                  <option value="Visualizador">Visualizador</option>
+                </select>
+
+                <select
+                  value={filterTipo}
+                  onChange={(e) => setFilterTipo(e.target.value)}
+                  className="px-3 sm:px-4 py-1.5 sm:py-2 lg:py-3 bg-neutral-800/60 border border-neutral-700 rounded-lg sm:rounded-xl text-neutral-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all duration-200 text-[11px] sm:text-xs lg:text-sm [&>option]:bg-neutral-900 [&>option]:text-neutral-100"
+                  style={{ colorScheme: "dark" }}
+                >
+                  <option value="">Todos os tipos</option>
+                  <option value="Fisica">Pessoa Física</option>
+                  <option value="Juridica">Pessoa Jurídica</option>
+                </select>
+
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="px-3 sm:px-4 py-1.5 sm:py-2 lg:py-3 bg-neutral-800/60 border border-neutral-700 rounded-lg sm:rounded-xl text-neutral-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all duration-200 text-[11px] sm:text-xs lg:text-sm [&>option]:bg-neutral-900 [&>option]:text-neutral-100"
+                  style={{ colorScheme: "dark" }}
+                >
+                  <option value="">Todos os status</option>
+                  <option value="ativo">Ativo</option>
+                  <option value="inativo">Inativo</option>
+                </select>
+              </div>
+            </motion.div>
+
+            {/* Barra de Ações quando usuário selecionado */}
+            <AnimatePresence>
+              {selectedUsuarioId && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="bg-neutral-900/95 backdrop-blur-xl rounded-xl sm:rounded-2xl p-3 sm:p-4 lg:p-5 shadow-lg border border-amber-500/30 w-full"
+                >
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 bg-amber-500/20 rounded-lg">
+                        <CheckCircle className="w-5 h-5 text-amber-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-neutral-100">
+                          Usuário Selecionado
+                        </p>
+                        <p className="text-xs text-neutral-400">
+                          {usuarios.find((u) => u.id === selectedUsuarioId)?.login}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={handleViewSelected}
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-xl font-medium transition-all duration-200 border border-blue-500/30"
+                        title="Visualizar usuário selecionado"
+                      >
+                        <Eye className="w-4 h-4" />
+                        <span>Visualizar</span>
+                      </motion.button>
+                      <PermissionWrapper modulo="Usuario" acao="Editar">
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={handleEditSelected}
+                          className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 rounded-xl font-medium transition-all duration-200 border border-orange-500/30"
+                          title="Editar usuário selecionado"
+                        >
+                          <Edit className="w-4 h-4" />
+                          <span>Editar</span>
+                        </motion.button>
+                      </PermissionWrapper>
+                      <PermissionWrapper modulo="Usuario" acao="Editar">
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={handleResetPasswordSelected}
+                          className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded-xl font-medium transition-all duration-200 border border-amber-500/30"
+                          title="Reset de senha"
+                        >
+                          <KeyRound className="w-4 h-4" />
+                          <span>Reset Senha</span>
+                        </motion.button>
+                      </PermissionWrapper>
+                      <PermissionWrapper modulo="Usuario" acao="Excluir">
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={handleDeleteSelected}
+                          className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-xl font-medium transition-all duration-200 border border-red-500/30"
+                          title="Excluir usuário selecionado"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          <span>Excluir</span>
+                        </motion.button>
+                      </PermissionWrapper>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Estatísticas */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6"
+            >
+              <div className="bg-neutral-900/95 backdrop-blur-xl rounded-xl sm:rounded-2xl p-2.5 sm:p-3 lg:p-4 shadow-sm border border-neutral-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-secondary-600 text-xs sm:text-sm font-medium">
+                      Total de Usuários
+                    </p>
+                    <p className="text-lg sm:text-xl lg:text-2xl font-bold text-secondary-900">
+                      {stats.total}
+                    </p>
+                  </div>
+                  <div className="p-1.5 sm:p-2 lg:p-3 bg-purple-100 rounded-lg sm:rounded-xl">
+                    <UserCheck className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-purple-600" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-neutral-900/95 backdrop-blur-xl rounded-xl sm:rounded-2xl p-2.5 sm:p-3 lg:p-4 shadow-sm border border-neutral-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-secondary-600 text-xs sm:text-sm font-medium">
+                      Usuários Ativos
+                    </p>
+                    <p className="text-lg sm:text-xl lg:text-2xl font-bold text-green-600">
+                      {stats.ativos}
+                    </p>
+                  </div>
+                  <div className="p-1.5 sm:p-2 lg:p-3 bg-green-100 rounded-lg sm:rounded-xl">
+                    <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-green-600" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-neutral-900/95 backdrop-blur-xl rounded-xl sm:rounded-2xl p-2.5 sm:p-3 lg:p-4 shadow-sm border border-neutral-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-secondary-600 text-xs sm:text-sm font-medium">
+                      Usuários Inativos
+                    </p>
+                    <p className="text-lg sm:text-xl lg:text-2xl font-bold text-red-600">
+                      {stats.inativos}
+                    </p>
+                  </div>
+                  <div className="p-1.5 sm:p-2 lg:p-3 bg-red-100 rounded-lg sm:rounded-xl">
+                    <XCircle className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-red-600" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-neutral-900/95 backdrop-blur-xl rounded-xl sm:rounded-2xl p-2.5 sm:p-3 lg:p-4 shadow-sm border border-neutral-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-secondary-600 text-xs sm:text-sm font-medium">
+                      Administradores
+                    </p>
+                    <p className="text-lg sm:text-xl lg:text-2xl font-bold text-orange-600">
+                      {stats.administradores}
+                    </p>
+                  </div>
+                  <div className="p-1.5 sm:p-2 lg:p-3 bg-orange-100 rounded-lg sm:rounded-xl">
+                    <Shield className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-orange-600" />
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Tabela ou Estados de Loading/Error */}
+            {error && !loading ? (
+              <ErrorMessage message={error} onRetry={fetchUsuarios} />
+            ) : (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="bg-neutral-900/95 backdrop-blur-xl rounded-xl sm:rounded-2xl shadow-sm border border-neutral-800 overflow-hidden w-full relative"
+              >
+                <div className="px-3 sm:px-4 lg:px-6 py-2.5 sm:py-3 lg:py-4 border-b border-neutral-800">
+                  <h3 className="text-sm sm:text-base lg:text-lg font-semibold text-secondary-900">
+                    Lista de Usuários ({filteredUsuarios.length} registros)
+                  </h3>
+                </div>
+
+                {/* Loading overlay centralizado */}
+                <AnimatePresence>
+                  {loading && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-900/60 backdrop-blur-sm"
                     >
-                      <thead className="bg-secondary-50/50">
-                        <tr>
-                          <th
-                            className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 text-left font-medium text-secondary-500 uppercase tracking-wider ${
-                              isTableCompact
-                                ? "text-[9px] sm:text-[10px]"
-                                : "text-[10px] sm:text-xs"
-                            }`}
-                          >
-                            Usuário
-                          </th>
-                          <th
-                            className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 text-left font-medium text-secondary-500 uppercase tracking-wider hidden sm:table-cell ${
-                              isTableCompact
-                                ? "text-[9px] sm:text-[10px]"
-                                : "text-[10px] sm:text-xs"
-                            }`}
-                          >
-                            Pessoa Vinculada
-                          </th>
-                          <th
-                            className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 text-left font-medium text-secondary-500 uppercase tracking-wider hidden sm:table-cell ${
-                              isTableCompact
-                                ? "text-[9px] sm:text-[10px]"
-                                : "text-[10px] sm:text-xs"
-                            }`}
-                          >
-                            Grupo de Acesso
-                          </th>
-                          <th
-                            className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 text-left font-medium text-secondary-500 uppercase tracking-wider hidden sm:table-cell ${
-                              isTableCompact
-                                ? "text-[9px] sm:text-[10px]"
-                                : "text-[10px] sm:text-xs"
-                            }`}
-                          >
-                            Tipo
-                          </th>
-                          <th
-                            className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 text-left font-medium text-secondary-500 uppercase tracking-wider hidden sm:table-cell ${
-                              isTableCompact
-                                ? "text-[9px] sm:text-[10px]"
-                                : "text-[10px] sm:text-xs"
-                            }`}
-                          >
-                            Status
-                          </th>
-                          <th
-                            className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 text-left font-medium text-secondary-500 uppercase tracking-wider hidden sm:table-cell ${
-                              isTableCompact
-                                ? "text-[9px] sm:text-[10px]"
-                                : "text-[10px] sm:text-xs"
-                            }`}
-                          >
-                            Último Acesso
-                          </th>
-                          <th
-                            className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 text-right font-medium text-secondary-500 uppercase tracking-wider ${
-                              isTableCompact
-                                ? "text-[9px] sm:text-[10px]"
-                                : "text-[10px] sm:text-xs"
-                            }`}
-                          >
-                            Ações
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-secondary-200/50">
-                        {filteredUsuarios.map((usuario, index) => (
-                          <motion.tr
-                            key={usuario.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.4 + index * 0.05 }}
-                            onDoubleClick={() => {
-                              setEditingUsuario(usuario);
-                              setShowForm(true);
-                              openForm();
-                            }}
-                            className="hover:bg-secondary-50/50 transition-colors duration-200 cursor-pointer"
-                          >
-                            <td
-                              className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 whitespace-nowrap ${
-                                isTableCompact ? "py-1 sm:py-1.5" : ""
-                              }`}
-                            >
-                              <div
-                                className={`flex items-center space-x-1.5 sm:space-x-2 max-w-[200px] sm:max-w-[250px] lg:max-w-[300px] ${
+                      <div className="flex flex-col items-center gap-3">
+                        <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
+                        <span className="text-sm text-neutral-300">Carregando...</span>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {filteredUsuarios.length === 0 && !loading ? (
+                  <div className="text-center py-12">
+                    <UserCheck className="w-16 h-16 text-secondary-300 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-secondary-900 mb-2">
+                      {searchTerm || filterGrupo || filterTipo || filterStatus
+                        ? "Nenhum resultado encontrado"
+                        : "Nenhum usuário cadastrado"}
+                    </h3>
+                    <p className="text-secondary-600">
+                      {searchTerm || filterGrupo || filterTipo || filterStatus
+                        ? "Tente ajustar os filtros de busca"
+                        : pessoasFisicas.length === 0 &&
+                          pessoasJuridicas.length === 0
+                        ? "Cadastre primeiro uma pessoa física ou jurídica"
+                        : "Clique em 'Novo Usuário' para começar"}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="w-full">
+                    {/* Controles da tabela */}
+                    <div className="flex items-center justify-end mb-3">
+                      <TableSizeToggle
+                        isCompact={isTableCompact}
+                        onToggle={() => setIsTableCompact(!isTableCompact)}
+                        pageId="usuarios"
+                      />
+                    </div>
+
+                    <div className="w-full overflow-x-auto max-h-[60vh] overflow-y-auto">
+                      <div
+                        ref={tableRef}
+                        className="table-responsive table-container overflow-x-auto min-w-full"
+                      >
+                        <table
+                          className={`w-full min-w-[1200px] sm:min-w-[1300px] lg:min-w-[1400px] xl:min-w-[1500px] ${
+                            isTableCompact ? "table-compact" : ""
+                          }`}
+                        >
+                          <thead className="bg-secondary-50/50 sticky top-0 z-[5]">
+                            <tr>
+                              <th
+                                className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 text-left font-medium text-secondary-500 uppercase tracking-wider ${
                                   isTableCompact
-                                    ? "max-w-[150px] sm:max-w-[180px] lg:max-w-[200px]"
+                                    ? "text-[9px] sm:text-[10px]"
+                                    : "text-[10px] sm:text-xs"
+                                }`}
+                              >
+                                Usuário
+                              </th>
+                              <th
+                                className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 text-left font-medium text-secondary-500 uppercase tracking-wider hidden sm:table-cell ${
+                                  isTableCompact
+                                    ? "text-[9px] sm:text-[10px]"
+                                    : "text-[10px] sm:text-xs"
+                                }`}
+                              >
+                                Pessoa Vinculada
+                              </th>
+                              <th
+                                className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 text-left font-medium text-secondary-500 uppercase tracking-wider hidden sm:table-cell ${
+                                  isTableCompact
+                                    ? "text-[9px] sm:text-[10px]"
+                                    : "text-[10px] sm:text-xs"
+                                }`}
+                              >
+                                Grupo de Acesso
+                              </th>
+                              <th
+                                className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 text-left font-medium text-secondary-500 uppercase tracking-wider hidden lg:table-cell ${
+                                  isTableCompact
+                                    ? "text-[9px] sm:text-[10px]"
+                                    : "text-[10px] sm:text-xs"
+                                }`}
+                              >
+                                Filial
+                              </th>
+                              <th
+                                className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 text-left font-medium text-secondary-500 uppercase tracking-wider hidden sm:table-cell ${
+                                  isTableCompact
+                                    ? "text-[9px] sm:text-[10px]"
+                                    : "text-[10px] sm:text-xs"
+                                }`}
+                              >
+                                Tipo
+                              </th>
+                              <th
+                                className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 text-left font-medium text-secondary-500 uppercase tracking-wider hidden sm:table-cell ${
+                                  isTableCompact
+                                    ? "text-[9px] sm:text-[10px]"
+                                    : "text-[10px] sm:text-xs"
+                                }`}
+                              >
+                                Status
+                              </th>
+                              <th
+                                className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 text-left font-medium text-secondary-500 uppercase tracking-wider hidden sm:table-cell ${
+                                  isTableCompact
+                                    ? "text-[9px] sm:text-[10px]"
+                                    : "text-[10px] sm:text-xs"
+                                }`}
+                              >
+                                Data Cadastro
+                              </th>
+                              <th
+                                className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 text-left font-medium text-secondary-500 uppercase tracking-wider hidden sm:table-cell ${
+                                  isTableCompact
+                                    ? "text-[9px] sm:text-[10px]"
+                                    : "text-[10px] sm:text-xs"
+                                }`}
+                              >
+                                Último Acesso
+                              </th>
+                              <th
+                                className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 text-right font-medium text-secondary-500 uppercase tracking-wider ${
+                                  isTableCompact
+                                    ? "text-[9px] sm:text-[10px]"
+                                    : "text-[10px] sm:text-xs"
+                                }`}
+                              >
+                                Ações
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-secondary-200/50">
+                            {paginatedUsuarios.map((usuario, index) => (
+                              <motion.tr
+                                key={usuario.id}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.4 + index * 0.05 }}
+                                onClick={(event) =>
+                                  handleTableRowClick(usuario, event)
+                                }
+                                onDoubleClick={() => {
+                                  setEditingUsuario(usuario);
+                                  setShowForm(true);
+                                  openForm();
+                                }}
+                                className={`hover:bg-neutral-800/50 transition-colors duration-200 cursor-pointer ${
+                                  selectedUsuarioId === usuario.id
+                                    ? "bg-amber-500/10 border-l-4 border-amber-500"
                                     : ""
                                 }`}
                               >
-                                <div
-                                  className={`bg-gradient-to-br from-purple-500 to-purple-600 rounded-full flex items-center justify-center flex-shrink-0 ${
-                                    isTableCompact
-                                      ? "w-4 h-4 sm:w-5 sm:h-5"
-                                      : "w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7"
+                                <td
+                                  className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 whitespace-nowrap ${
+                                    isTableCompact ? "py-1 sm:py-1.5" : ""
                                   }`}
                                 >
-                                  <span
-                                    className={`font-bold text-white ${
+                                  <div
+                                    className={`flex items-center space-x-1.5 sm:space-x-2 max-w-[200px] sm:max-w-[250px] lg:max-w-[300px] ${
+                                      isTableCompact
+                                        ? "max-w-[150px] sm:max-w-[180px] lg:max-w-[200px]"
+                                        : ""
+                                    }`}
+                                  >
+                                    <div
+                                      className={`bg-gradient-to-br from-purple-500 to-purple-600 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                        isTableCompact
+                                          ? "w-4 h-4 sm:w-5 sm:h-5"
+                                          : "w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7"
+                                      }`}
+                                    >
+                                      <span
+                                        className={`font-bold text-white ${
+                                          isTableCompact
+                                            ? "text-[9px] sm:text-[10px]"
+                                            : "text-[10px] sm:text-xs"
+                                        }`}
+                                      >
+                                        {usuario.login.charAt(0)}
+                                      </span>
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <div
+                                        className={`font-medium text-secondary-900 truncate ${
+                                          isTableCompact
+                                            ? "text-[10px] sm:text-[11px]"
+                                            : "text-[11px] sm:text-xs lg:text-sm"
+                                        }`}
+                                      >
+                                        {usuario.login}
+                                      </div>
+                                      <div
+                                        className={`text-secondary-500 truncate hidden sm:block ${
+                                          isTableCompact
+                                            ? "text-[9px] sm:text-[10px]"
+                                            : "text-[10px] sm:text-xs"
+                                        }`}
+                                      >
+                                        {usuario.email}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td
+                                  className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 whitespace-nowrap hidden sm:table-cell ${
+                                    isTableCompact ? "py-1 sm:py-1.5" : ""
+                                  }`}
+                                >
+                                  <div
+                                    className={`text-secondary-900 ${
                                       isTableCompact
                                         ? "text-[9px] sm:text-[10px]"
-                                        : "text-[10px] sm:text-xs"
+                                        : "text-[10px] sm:text-xs lg:text-sm"
                                     }`}
                                   >
-                                    {usuario.login.charAt(0)}
-                                  </span>
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <div
-                                    className={`font-medium text-secondary-900 truncate ${
-                                      isTableCompact
-                                        ? "text-[10px] sm:text-[11px]"
-                                        : "text-[11px] sm:text-xs lg:text-sm"
-                                    }`}
-                                  >
-                                    {usuario.login}
+                                    {usuario.pessoaFisica
+                                      ? usuario.pessoaFisica.nome
+                                      : usuario.pessoaJuridica
+                                      ? usuario.pessoaJuridica.razaoSocial
+                                      : "N/A"}
                                   </div>
                                   <div
-                                    className={`text-secondary-500 truncate hidden sm:block ${
+                                    className={`text-secondary-500 ${
                                       isTableCompact
                                         ? "text-[9px] sm:text-[10px]"
-                                        : "text-[10px] sm:text-xs"
+                                        : "text-[10px] sm:text-xs lg:text-sm"
                                     }`}
                                   >
-                                    {usuario.email}
+                                    {usuario.pessoaFisica
+                                      ? usuario.pessoaFisica.cpf
+                                      : usuario.pessoaJuridica
+                                      ? usuario.pessoaJuridica.cnpj
+                                      : "N/A"}
                                   </div>
-                                </div>
-                              </div>
-                            </td>
-                            <td
-                              className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 whitespace-nowrap hidden sm:table-cell ${
-                                isTableCompact ? "py-1 sm:py-1.5" : ""
-                              }`}
-                            >
-                              <div
-                                className={`text-secondary-900 ${
-                                  isTableCompact
-                                    ? "text-[9px] sm:text-[10px]"
-                                    : "text-[10px] sm:text-xs lg:text-sm"
+                                </td>
+                                <td
+                                  className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 whitespace-nowrap hidden sm:table-cell ${
+                                    isTableCompact ? "py-1 sm:py-1.5" : ""
+                                  }`}
+                                >
+                                  <GrupoAcessoBadge
+                                    grupo={
+                                      usuario.grupoAcesso?.nome || "Sem grupo"
+                                    }
+                                    isCompact={isTableCompact}
+                                  />
+                                </td>
+                                <td
+                                  className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 whitespace-nowrap hidden lg:table-cell ${
+                                    isTableCompact ? "py-1 sm:py-1.5" : ""
+                                  }`}
+                                >
+                                  <div
+                                    className={`text-secondary-700 ${
+                                      isTableCompact
+                                        ? "text-[9px] sm:text-[10px]"
+                                        : "text-[10px] sm:text-xs lg:text-sm"
+                                    }`}
+                                  >
+                                    {usuario.filial?.nome || "Não definida"}
+                                  </div>
+                                </td>
+                                <td
+                                  className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 whitespace-nowrap hidden sm:table-cell ${
+                                    isTableCompact ? "py-1 sm:py-1.5" : ""
+                                  }`}
+                                >
+                                  <TipoPessoaBadge
+                                    tipo={usuario.tipoPessoa}
+                                    isCompact={isTableCompact}
+                                  />
+                                </td>
+                                <td
+                                  className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 whitespace-nowrap hidden sm:table-cell ${
+                                    isTableCompact ? "py-1 sm:py-1.5" : ""
+                                  }`}
+                                >
+                                  <StatusBadge
+                                    status={usuario.ativo ? "ativo" : "inativo"}
+                                    isCompact={isTableCompact}
+                                  />
+                                </td>
+                                <td
+                                  className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 whitespace-nowrap text-secondary-600 hidden sm:table-cell ${
+                                    isTableCompact ? "py-1 sm:py-1.5" : ""
+                                  }`}
+                                >
+                                  {formatDate(usuario.dataCadastro)}
+                                </td>
+                                <td
+                                  className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 whitespace-nowrap text-secondary-600 hidden sm:table-cell ${
+                                    isTableCompact
+                                      ? "text-[9px] sm:text-[10px] py-1 sm:py-1.5"
+                                      : "text-[10px] sm:text-xs lg:text-sm"
+                                  }`}
+                                >
+                                  {usuario.ultimoAcesso
+                                    ? formatDateTime(usuario.ultimoAcesso)
+                                    : "Nunca acessou"}
+                                </td>
+                                <td
+                                  className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 whitespace-nowrap text-right ${
+                                    isTableCompact ? "py-1 sm:py-1.5" : ""
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-end space-x-0.5 sm:space-x-1">
+                                    <motion.button
+                                      whileHover={{ scale: 1.1 }}
+                                      whileTap={{ scale: 0.9 }}
+                                      className="p-1 sm:p-1.5 text-secondary-400 hover:text-primary-600 transition-colors duration-200"
+                                      title="Visualizar"
+                                    >
+                                      <Eye
+                                        className={
+                                          isTableCompact
+                                            ? "w-2 h-2 sm:w-2.5 sm:h-2.5"
+                                            : "w-2.5 h-2.5 sm:w-3 sm:h-3 lg:w-3.5 lg:h-3.5"
+                                        }
+                                      />
+                                    </motion.button>
+                                    <PermissionWrapper
+                                      modulo="Usuario"
+                                      acao="Editar"
+                                    >
+                                      <motion.button
+                                        whileHover={{ scale: 1.1 }}
+                                        whileTap={{ scale: 0.9 }}
+                                        onClick={() => handleEdit(usuario)}
+                                        className="p-1 sm:p-1.5 text-secondary-400 hover:text-accent-600 transition-colors duration-200"
+                                        title="Editar"
+                                      >
+                                        <Edit
+                                          className={
+                                            isTableCompact
+                                              ? "w-2 h-2 sm:w-2.5 sm:h-2.5"
+                                              : "w-2.5 h-2.5 sm:w-3 sm:h-3 lg:w-3.5 lg:h-3.5"
+                                          }
+                                        />
+                                      </motion.button>
+                                    </PermissionWrapper>
+                                    <PermissionWrapper
+                                      modulo="Usuario"
+                                      acao="Editar"
+                                    >
+                                      <motion.button
+                                        whileHover={{ scale: 1.1 }}
+                                        whileTap={{ scale: 0.9 }}
+                                        onClick={() => setShowResetConfirm(usuario.id)}
+                                        className="p-1 sm:p-1.5 text-secondary-400 hover:text-amber-600 transition-colors duration-200"
+                                        title="Reset de senha"
+                                      >
+                                        <KeyRound
+                                          className={
+                                            isTableCompact
+                                              ? "w-2 h-2 sm:w-2.5 sm:h-2.5"
+                                              : "w-2.5 h-2.5 sm:w-3 sm:h-3 lg:w-3.5 lg:h-3.5"
+                                          }
+                                        />
+                                      </motion.button>
+                                    </PermissionWrapper>
+                                    <PermissionWrapper
+                                      modulo="Usuario"
+                                      acao="Excluir"
+                                    >
+                                      <motion.button
+                                        whileHover={{ scale: 1.1 }}
+                                        whileTap={{ scale: 0.9 }}
+                                        onClick={() =>
+                                          setShowDeleteConfirm(usuario.id)
+                                        }
+                                        className="p-1 sm:p-1.5 text-secondary-400 hover:text-red-600 transition-colors duration-200"
+                                        title="Excluir"
+                                      >
+                                        <Trash2
+                                          className={
+                                            isTableCompact
+                                              ? "w-2 h-2 sm:w-2.5 sm:h-2.5"
+                                              : "w-2.5 h-2.5 sm:w-3 sm:h-3 lg:w-3.5 lg:h-3.5"
+                                          }
+                                        />
+                                      </motion.button>
+                                    </PermissionWrapper>
+                                  </div>
+                                </td>
+                              </motion.tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {/* TableNavigation removido - setas laterais desabilitadas */}
+                    </div>
+                  </div>
+                )}
+
+                {/* Paginação */}
+                {filteredUsuarios.length > 0 && (
+                  <div className="px-3 sm:px-4 lg:px-6 py-2.5 sm:py-3 lg:py-4 bg-neutral-800/50/30 border-t border-neutral-700/50">
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-0">
+                      <div className="text-xs sm:text-sm text-neutral-400 text-center sm:text-left">
+                        Mostrando {(currentPage - 1) * ITEMS_PER_PAGE + 1}-{" "}
+                        {Math.min(currentPage * ITEMS_PER_PAGE, filteredUsuarios.length)} de{" "}
+                        {filteredUsuarios.length} registros
+                      </div>
+                      <div className="flex items-center space-x-1 sm:space-x-2">
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          disabled={currentPage === 1}
+                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                          className="btn-mobile px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-neutral-300 bg-neutral-800 border border-neutral-700 rounded-lg hover:bg-neutral-700 hover:border-amber-500/50 transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-neutral-800 disabled:hover:border-neutral-700"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </motion.button>
+                        {Array.from({ length: totalPages }, (_, i) => i + 1)
+                          .filter((page) => {
+                            if (totalPages <= 7) return true;
+                            if (page === 1 || page === totalPages) return true;
+                            if (Math.abs(page - currentPage) <= 1) return true;
+                            if (page === currentPage - 2 || page === currentPage + 2) return true;
+                            return false;
+                          })
+                          .reduce<(number | "ellipsis")[]>((acc, page, idx, arr) => {
+                            if (idx > 0 && page - (arr[idx - 1] as number) > 1) {
+                              acc.push("ellipsis");
+                            }
+                            acc.push(page);
+                            return acc;
+                          }, [])
+                          .map((item, idx) =>
+                            item === "ellipsis" ? (
+                              <span
+                                key={`ellipsis-${idx}`}
+                                className="px-1 sm:px-2 text-neutral-500 text-xs"
+                              >
+                                ...
+                              </span>
+                            ) : (
+                              <motion.button
+                                key={item}
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => setCurrentPage(item)}
+                                className={`btn-mobile px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors duration-200 ${
+                                  currentPage === item
+                                    ? "text-white bg-amber-500 border border-transparent hover:bg-amber-600"
+                                    : "text-neutral-300 bg-neutral-800 border border-neutral-700 hover:bg-neutral-700 hover:border-amber-500/50"
                                 }`}
                               >
-                                {usuario.pessoaFisica
-                                  ? usuario.pessoaFisica.nome
-                                  : usuario.pessoaJuridica
-                                  ? usuario.pessoaJuridica.razaoSocial
-                                  : "N/A"}
-                              </div>
-                              <div
-                                className={`text-secondary-500 ${
-                                  isTableCompact
-                                    ? "text-[9px] sm:text-[10px]"
-                                    : "text-[10px] sm:text-xs lg:text-sm"
-                                }`}
-                              >
-                                {usuario.pessoaFisica
-                                  ? usuario.pessoaFisica.cpf
-                                  : usuario.pessoaJuridica
-                                  ? usuario.pessoaJuridica.cnpj
-                                  : "N/A"}
-                              </div>
-                            </td>
-                            <td
-                              className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 whitespace-nowrap hidden sm:table-cell ${
-                                isTableCompact ? "py-1 sm:py-1.5" : ""
-                              }`}
-                            >
-                              <GrupoAcessoBadge
-                                grupo={usuario.grupoAcesso}
-                                isCompact={isTableCompact}
-                              />
-                            </td>
-                            <td
-                              className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 whitespace-nowrap hidden sm:table-cell ${
-                                isTableCompact ? "py-1 sm:py-1.5" : ""
-                              }`}
-                            >
-                              <TipoPessoaBadge
-                                tipo={usuario.tipoPessoa}
-                                isCompact={isTableCompact}
-                              />
-                            </td>
-                            <td
-                              className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 whitespace-nowrap hidden sm:table-cell ${
-                                isTableCompact ? "py-1 sm:py-1.5" : ""
-                              }`}
-                            >
-                              <StatusBadge
-                                status={usuario.ativo ? "ativo" : "inativo"}
-                                isCompact={isTableCompact}
-                              />
-                            </td>
-                            <td
-                              className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 whitespace-nowrap text-secondary-600 hidden sm:table-cell ${
-                                isTableCompact
-                                  ? "text-[9px] sm:text-[10px] py-1 sm:py-1.5"
-                                  : "text-[10px] sm:text-xs lg:text-sm"
-                              }`}
-                            >
-                              {usuario.ultimoAcesso
-                                ? formatDateTime(usuario.ultimoAcesso)
-                                : "Nunca acessou"}
-                            </td>
-                            <td
-                              className={`px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 lg:py-3 whitespace-nowrap text-right ${
-                                isTableCompact ? "py-1 sm:py-1.5" : ""
-                              }`}
-                            >
-                              <div className="flex items-center justify-end space-x-0.5 sm:space-x-1">
-                                <motion.button
-                                  whileHover={{ scale: 1.1 }}
-                                  whileTap={{ scale: 0.9 }}
-                                  className="p-1 sm:p-1.5 text-secondary-400 hover:text-primary-600 transition-colors duration-200"
-                                  title="Visualizar"
-                                >
-                                  <Eye
-                                    className={
-                                      isTableCompact
-                                        ? "w-2 h-2 sm:w-2.5 sm:h-2.5"
-                                        : "w-2.5 h-2.5 sm:w-3 sm:h-3 lg:w-3.5 lg:h-3.5"
-                                    }
-                                  />
-                                </motion.button>
-                                <motion.button
-                                  whileHover={{ scale: 1.1 }}
-                                  whileTap={{ scale: 0.9 }}
-                                  onClick={() => handleEdit(usuario)}
-                                  className="p-1 sm:p-1.5 text-secondary-400 hover:text-accent-600 transition-colors duration-200"
-                                  title="Editar"
-                                >
-                                  <Edit
-                                    className={
-                                      isTableCompact
-                                        ? "w-2 h-2 sm:w-2.5 sm:h-2.5"
-                                        : "w-2.5 h-2.5 sm:w-3 sm:h-3 lg:w-3.5 lg:h-3.5"
-                                    }
-                                  />
-                                </motion.button>
-                                <motion.button
-                                  whileHover={{ scale: 1.1 }}
-                                  whileTap={{ scale: 0.9 }}
-                                  onClick={() =>
-                                    setShowDeleteConfirm(usuario.id)
-                                  }
-                                  className="p-1 sm:p-1.5 text-secondary-400 hover:text-red-600 transition-colors duration-200"
-                                  title="Excluir"
-                                >
-                                  <Trash2
-                                    className={
-                                      isTableCompact
-                                        ? "w-2 h-2 sm:w-2.5 sm:h-2.5"
-                                        : "w-2.5 h-2.5 sm:w-3 sm:h-3 lg:w-3.5 lg:h-3.5"
-                                    }
-                                  />
-                                </motion.button>
-                              </div>
-                            </td>
-                          </motion.tr>
-                        ))}
-                      </tbody>
-                    </table>
+                                {item}
+                              </motion.button>
+                            )
+                          )}
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          disabled={currentPage === totalPages}
+                          onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                          className="btn-mobile px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-neutral-300 bg-neutral-800 border border-neutral-700 rounded-lg hover:bg-neutral-700 hover:border-amber-500/50 transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-neutral-800 disabled:hover:border-neutral-700"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </motion.button>
+                      </div>
+                    </div>
                   </div>
-                  <TableNavigation
-                    onScrollLeft={handleScrollLeft}
-                    onScrollRight={handleScrollRight}
-                    canScrollLeft={canScrollLeft}
-                    canScrollRight={canScrollRight}
-                    pageId="usuarios"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Paginação */}
-            {filteredUsuarios.length > 0 && (
-              <div className="px-3 sm:px-4 lg:px-6 py-2.5 sm:py-3 lg:py-4 bg-secondary-50/30 border-t border-secondary-200/50">
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-0">
-                  <div className="text-xs sm:text-sm text-secondary-500 text-center sm:text-left">
-                    Mostrando {filteredUsuarios.length} de {usuarios.length}{" "}
-                    registros
-                  </div>
-                  <div className="flex items-center space-x-1 sm:space-x-2">
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      className="btn-mobile px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-secondary-700 bg-white border border-secondary-300 rounded-lg hover:bg-secondary-50 transition-colors duration-200"
-                    >
-                      Anterior
-                    </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      className="btn-mobile px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-white bg-primary-600 border border-transparent rounded-lg hover:bg-primary-700 transition-colors duration-200"
-                    >
-                      Próximo
-                    </motion.button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </motion.div>
-        )}
-
-        {/* Formulário Modal */}
-        <AnimatePresence>
-          {showForm && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            >
-              <div className="w-full max-w-4xl max-h-screen overflow-y-auto">
-                <UsuarioForm
-                  initialData={editingUsuario}
-                  pessoasFisicas={pessoasFisicas}
-                  pessoasJuridicas={pessoasJuridicas}
-                  onSubmit={handleCreateOrUpdate}
-                  onCancel={handleCloseForm}
-                  loading={creating || updating}
-                />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Modal de Confirmação de Exclusão */}
-        <AnimatePresence>
-          {showDeleteConfirm !== null && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            >
-              <motion.div
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl"
-              >
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="p-2 bg-red-100 rounded-full">
-                    <AlertCircle className="w-6 h-6 text-red-600" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-secondary-900">
-                    Confirmar Exclusão
-                  </h3>
-                </div>
-                <p className="text-secondary-600 mb-6">
-                  Tem certeza que deseja excluir este usuário? Esta ação não
-                  pode ser desfeita.
-                </p>
-                <div className="flex justify-end space-x-3">
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => setShowDeleteConfirm(null)}
-                    className="px-4 py-2 text-secondary-700 bg-secondary-100 hover:bg-secondary-200 rounded-lg font-medium transition-colors duration-200"
-                  >
-                    Cancelar
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => handleDelete(showDeleteConfirm)}
-                    disabled={deleting}
-                    className="flex items-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors duration-200 disabled:opacity-50"
-                  >
-                    {deleting && <Loader2 className="w-4 h-4 animate-spin" />}
-                    <span>{deleting ? "Excluindo..." : "Excluir"}</span>
-                  </motion.button>
-                </div>
+                )}
               </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </MainLayout>
+            )}
+
+            {/* Formulário Modal */}
+            <AnimatePresence>
+              {showForm && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4"
+                >
+                  <div className="w-full max-w-4xl max-h-screen overflow-y-auto">
+                    <UsuarioForm
+                      initialData={editingUsuario}
+                      pessoasFisicas={pessoasFisicas}
+                      pessoasJuridicas={pessoasJuridicas}
+                      onSubmit={handleCreateOrUpdate}
+                      onCancel={handleCloseForm}
+                      loading={creating || updating}
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Modal de Confirmação de Exclusão */}
+            <AnimatePresence>
+              {showDeleteConfirm !== null && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                >
+                  <motion.div
+                    initial={{ scale: 0.95, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.95, opacity: 0 }}
+                    className="bg-neutral-900/95 backdrop-blur-xl rounded-2xl p-6 max-w-md w-full shadow-xl border border-neutral-700/50"
+                  >
+                    <div className="flex items-center space-x-3 mb-4">
+                      <div className="p-2 bg-red-500/20 rounded-full">
+                        <AlertCircle className="w-6 h-6 text-red-400" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-neutral-100">
+                        Confirmar Exclusão
+                      </h3>
+                    </div>
+                    <p className="text-neutral-300 mb-6">
+                      Tem certeza que deseja excluir este usuário? Esta ação não
+                      pode ser desfeita.
+                    </p>
+                    <div className="flex justify-end space-x-3">
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => setShowDeleteConfirm(null)}
+                        className="px-4 py-2 text-neutral-300 bg-neutral-800 hover:bg-neutral-700 rounded-lg font-medium transition-colors duration-200 border border-neutral-700"
+                      >
+                        Cancelar
+                      </motion.button>
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => handleDelete(showDeleteConfirm)}
+                        disabled={deleting}
+                        className="flex items-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors duration-200 disabled:opacity-50"
+                      >
+                        {deleting && (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        )}
+                        <span>{deleting ? "Excluindo..." : "Excluir"}</span>
+                      </motion.button>
+                    </div>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Modal de Confirmação de Reset de Senha */}
+            <AnimatePresence>
+              {showResetConfirm !== null && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                >
+                  <motion.div
+                    initial={{ scale: 0.95, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.95, opacity: 0 }}
+                    className="bg-neutral-900/95 backdrop-blur-xl rounded-2xl p-6 max-w-md w-full shadow-xl border border-neutral-700/50"
+                  >
+                    <div className="flex items-center space-x-3 mb-4">
+                      <div className="p-2 bg-amber-500/20 rounded-full">
+                        <KeyRound className="w-6 h-6 text-amber-400" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-neutral-100">
+                        Reset de Senha
+                      </h3>
+                    </div>
+                    <p className="text-neutral-300 mb-6">
+                      Um email será enviado para{" "}
+                      <strong className="text-amber-400">
+                        {usuarios.find((u) => u.id === showResetConfirm)?.email}
+                      </strong>{" "}
+                      com instruções para redefinir a senha.
+                    </p>
+                    <div className="flex justify-end space-x-3">
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => setShowResetConfirm(null)}
+                        className="px-4 py-2 text-neutral-300 bg-neutral-800 hover:bg-neutral-700 rounded-lg font-medium transition-colors duration-200 border border-neutral-700"
+                      >
+                        Cancelar
+                      </motion.button>
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => handleResetPassword(showResetConfirm)}
+                        disabled={resettingPassword}
+                        className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-neutral-900 rounded-lg font-medium transition-colors duration-200 disabled:opacity-50"
+                      >
+                        {resettingPassword && (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        )}
+                        <Mail className="w-4 h-4" />
+                        <span>Enviar Email</span>
+                      </motion.button>
+                    </div>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Toast de Sucesso */}
+            <AnimatePresence>
+              {resetSuccess && (
+                <motion.div
+                  initial={{ opacity: 0, y: 50 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 50 }}
+                  className="fixed bottom-4 right-4 z-50"
+                >
+                  <div className="bg-green-600 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center space-x-3 border border-green-500">
+                    <CheckCircle className="w-6 h-6" />
+                    <div>
+                      <p className="font-semibold">Email enviado com sucesso!</p>
+                      <p className="text-sm opacity-90">
+                        Instruções enviadas para {resetSuccess}
+                      </p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </MainLayout>
+      </PermissionWrapper>
+    </ErrorBoundary>
   );
 }

@@ -34,6 +34,7 @@ namespace CrmArrighi.Models
         [StringLength(200, ErrorMessage = "O tipo de serviço deve ter no máximo 200 caracteres")]
         public string? TipoServico { get; set; }
 
+        [StringLength(1000, ErrorMessage = "O campo 'Objeto do Contrato' deve ter no máximo 1000 caracteres. Atualmente você digitou mais que o permitido.")]
         public string? ObjetoContrato { get; set; }
 
         public decimal? Comissao { get; set; }
@@ -44,6 +45,14 @@ namespace CrmArrighi.Models
         public DateTime? PrimeiroVencimento { get; set; }
 
         public string? AnexoDocumento { get; set; }
+        
+        [StringLength(2000, ErrorMessage = "O campo 'Pendências' deve ter no máximo 2000 caracteres.")]
         public string? Pendencias { get; set; }
+
+        /// <summary>
+        /// Método de pagamento: "Boleto" (padrão) ou "Pix"
+        /// </summary>
+        [StringLength(20, ErrorMessage = "Método de pagamento deve ter no máximo 20 caracteres")]
+        public string? MetodoPagamento { get; set; } = "Boleto";
     }
 }

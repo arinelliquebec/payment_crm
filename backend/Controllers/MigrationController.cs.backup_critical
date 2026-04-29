@@ -1,0 +1,165 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using CrmArrighi.Data;
+using CrmArrighi.Services;
+
+namespace CrmArrighi.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class MigrationController : ControllerBase
+    {
+        private readonly CrmArrighiContext _context;
+        private readonly ISeedDataService _seedDataService;
+
+        public MigrationController(CrmArrighiContext context, ISeedDataService seedDataService)
+        {
+            _context = context;
+            _seedDataService = seedDataService;
+        }
+
+        // GET: api/Migration/add-email-telefone-parceiros
+        [HttpGet("add-email-telefone-parceiros")]
+        public async Task<IActionResult> AddEmailAndTelefoneToParceiros()
+        {
+            try
+            {
+                // Verificar se os campos Email e Telefone existem
+                var emailExists = await _context.Database.ExecuteSqlRawAsync(@"
+                    SELECT COUNT(*) FROM sys.columns
+                    WHERE object_id = OBJECT_ID('Parceiros') AND name = 'Email'
+                ");
+
+                var telefoneExists = await _context.Database.ExecuteSqlRawAsync(@"
+                    SELECT COUNT(*) FROM sys.columns
+                    WHERE object_id = OBJECT_ID('Parceiros') AND name = 'Telefone'
+                ");
+
+                var result = new
+                {
+                    message = "Verificação concluída",
+                    emailExists = emailExists > 0,
+                    telefoneExists = telefoneExists > 0
+                };
+
+                // Se os campos não existem, adicionar
+                if (emailExists == 0)
+                {
+                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE [Parceiros] ADD [Email] NVARCHAR(100) NULL");
+                    result = new
+                    {
+                        message = "Campo Email adicionado com sucesso",
+                        emailExists = true,
+                        telefoneExists = telefoneExists > 0
+                    };
+                }
+
+                if (telefoneExists == 0)
+                {
+                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE [Parceiros] ADD [Telefone] NVARCHAR(20) NULL");
+                    result = new
+                    {
+                        message = "Campos Email e Telefone adicionados com sucesso",
+                        emailExists = emailExists > 0 || true,
+                        telefoneExists = true
+                    };
+                }
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Erro ao atualizar tabela: {ex.Message}");
+            }
+        }
+
+        // GET: api/Migration/seed-grupos-acesso
+        [HttpGet("seed-grupos-acesso")]
+        public async Task<IActionResult> SeedGruposAcesso()
+        {
+            try
+            {
+                await _seedDataService.SeedAllAsync();
+
+                // Verificar quantos grupos foram criados
+                var gruposCount = await _context.GruposAcesso.CountAsync();
+                var permissoesCount = await _context.Permissoes.CountAsync();
+                var permissoesGruposCount = await _context.PermissoesGrupos.CountAsync();
+
+                var result = new
+                {
+                    message = "Grupos de acesso e permissões criados com sucesso",
+                    gruposCriados = gruposCount,
+                    permissoesCriadas = permissoesCount,
+                    permissoesGruposCriadas = permissoesGruposCount,
+                    grupos = await _context.GruposAcesso
+                        .Select(g => new { g.Id, g.Nome, g.Descricao })
+                        .OrderBy(g => g.Id)
+                        .ToListAsync()
+                };
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Erro ao criar grupos de acesso: {ex.Message}");
+            }
+        }
+
+        // GET: api/Migration/check-grupos-acesso
+        [HttpGet("check-grupos-acesso")]
+        public async Task<IActionResult> CheckGruposAcesso()
+        {
+            try
+            {
+                var grupos = await _context.GruposAcesso
+                    .Select(g => new { g.Id, g.Nome, g.Descricao, g.Ativo })
+                    .OrderBy(g => g.Id)
+                    .ToListAsync();
+
+                var permissoes = await _context.Permissoes
+                    .Select(p => new { p.Id, p.Nome, p.Modulo, p.Acao })
+                    .OrderBy(p => p.Modulo)
+                    .ThenBy(p => p.Acao)
+                    .ToListAsync();
+
+                var result = new
+                {
+                    gruposCount = grupos.Count,
+                    permissoesCount = permissoes.Count,
+                    grupos,
+                    permissoes
+                };
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Erro ao verificar grupos de acesso: {ex.Message}");
+            }
+        }
+
+        // POST: api/Migration/clear-and-reseed
+        [HttpPost("clear-and-reseed")]
+        public async Task<IActionResult> ClearAndReseed()
+        {
+            try
+            {
+                // Limpar permissões de grupos existentes
+                var permissoesGrupos = await _context.PermissoesGrupos.ToListAsync();
+                _context.PermissoesGrupos.RemoveRange(permissoesGrupos);
+                await _context.SaveChangesAsync();
+
+                // Recriar tudo
+                await _seedDataService.SeedAllAsync();
+
+                var permissoesGruposCount = await _context.PermissoesGrupos.CountAsync();
+                return Ok($"Permissões limpas e recriadas! Total: {permissoesGruposCount} relacionamentos");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Erro ao limpar e recriar: {ex.Message}");
+            }
+        }
+    }
+}

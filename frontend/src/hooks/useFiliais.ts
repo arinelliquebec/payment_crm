@@ -1,96 +1,103 @@
-// src/hooks/useFiliais.ts
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { apiClient } from "@/lib/api";
 
-export interface Filial {
+interface FilialBasica {
   id: number;
   nome: string;
   dataInclusao: string;
   usuarioImportacao?: string;
 }
 
-interface UseFiliaisState {
-  filiais: Filial[];
+interface UseFilialOptions {
+  options: { value: string; label: string; id: number }[];
   loading: boolean;
   error: string | null;
 }
 
-export function useFiliais() {
-  const [state, setState] = useState<UseFiliaisState>({
-    filiais: [],
-    loading: false,
-    error: null,
-  });
+export function useFilialOptions(): UseFilialOptions {
+  const [options, setOptions] = useState<
+    { value: string; label: string; id: number }[]
+  >([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchFiliais = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const response = await apiClient.get<FilialBasica[]>("/Filial");
+
+        if (response.data && !response.error) {
+          const filialOptions = response.data.map((filial) => ({
+            value: filial.id.toString(),
+            label: filial.nome,
+            id: filial.id,
+          }));
+
+          setOptions(filialOptions);
+        } else {
+          throw new Error(response.error || "Erro ao carregar filiais");
+        }
+      } catch (err) {
+        console.error("Erro ao carregar filiais:", err);
+        setError(err instanceof Error ? err.message : "Erro desconhecido");
+        setOptions([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchFiliais();
+  }, []);
+
+  return { options, loading, error };
+}
+
+interface UseFiliaisReturn {
+  filiais: FilialBasica[];
+  loading: boolean;
+  error: string | null;
+  fetchFiliais: () => Promise<void>;
+}
+
+export function useFiliais(): UseFiliaisReturn {
+  const [filiais, setFiliais] = useState<FilialBasica[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const isFetchingRef = useRef(false);
 
   const fetchFiliais = useCallback(async () => {
-    setState((prev) => ({ ...prev, loading: true, error: null }));
+    // Evita múltiplas chamadas simultâneas usando ref (não causa re-render)
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    
     try {
-      console.log("🔧 fetchFiliais: Iniciando requisição...");
-      const response = await apiClient.get("/Filial");
-      console.log("🔧 fetchFiliais: Resposta recebida:", response);
+      setLoading(true);
+      setError(null);
 
-      if (response.error) {
-        console.error("🔧 fetchFiliais: Erro na resposta:", response.error);
-        setState((prev) => ({
-          ...prev,
-          error: response.error || "Erro desconhecido",
-          loading: false,
-        }));
-        return;
+      const response = await apiClient.get<FilialBasica[]>("/Filial");
+
+      if (response.data && !response.error) {
+        setFiliais(response.data);
+      } else {
+        throw new Error(response.error || "Erro ao carregar filiais");
       }
-
-      if (!response.data) {
-        console.warn("🔧 fetchFiliais: Dados não encontrados na resposta");
-        setState((prev) => ({
-          ...prev,
-          filiais: [],
-          loading: false,
-        }));
-        return;
-      }
-
-      console.log("🔧 fetchFiliais: Dados recebidos:", response.data);
-
-      if (!Array.isArray(response.data)) {
-        console.error(
-          "🔧 fetchFiliais: Dados não são um array:",
-          typeof response.data
-        );
-        setState((prev) => ({
-          ...prev,
-          error: "Formato de dados inválido",
-          loading: false,
-        }));
-        return;
-      }
-
-      setState((prev) => ({
-        ...prev,
-        filiais: response.data as Filial[],
-        loading: false,
-      }));
-    } catch (error: unknown) {
-      console.error("🔧 fetchFiliais: Erro capturado:", error);
-      const errorMessage = error instanceof Error ? error.message : "Erro ao carregar filiais";
-      setState((prev) => ({
-        ...prev,
-        error: errorMessage,
-        loading: false,
-      }));
+    } catch (err) {
+      console.error("Erro ao carregar filiais:", err);
+      setError(err instanceof Error ? err.message : "Erro desconhecido");
+      setFiliais([]);
+    } finally {
+      setLoading(false);
+      isFetchingRef.current = false;
     }
   }, []);
 
-  const clearError = useCallback(() => {
-    setState((prev) => ({ ...prev, error: null }));
-  }, []);
-
+  // Carregar filiais apenas uma vez no mount
   useEffect(() => {
     fetchFiliais();
   }, [fetchFiliais]);
 
-  return {
-    ...state,
-    fetchFiliais,
-    clearError,
-  };
+  return { filiais, loading, error, fetchFiliais };
 }

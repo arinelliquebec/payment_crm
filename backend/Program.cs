@@ -1,18 +1,77 @@
-using Azure.Core;
-using Azure.Identity;
 using Microsoft.EntityFrameworkCore;
 using CrmArrighi.Data;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.HttpOverrides;
 using CrmArrighi.Middleware;
-using Npgsql;
-
-AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
-
-const string PostgreSqlAadScope = "https://ossrdbms-aad.database.windows.net/.default";
+using CrmArrighi.Services;
+using CrmArrighi.Utils;
+using System.Globalization;
+using System.Threading.RateLimiting;
+using Microsoft.ApplicationInsights;
+using Microsoft.ApplicationInsights.Extensibility;
+using CrmArrighi.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ✅ Em desenvolvimento, carregue também o appsettings.Production.json para usar as
+// mesmas credenciais reais configuradas para produção (exigência do cliente).
+if (builder.Environment.IsDevelopment())
+{
+    builder.Configuration.AddJsonFile("appsettings.Production.json", optional: true, reloadOnChange: true);
+    Console.WriteLine("⚠️ Ambiente Development: appsettings.Production.json carregado para usar Santander real.");
+}
+
+// ============================================================================
+// 📊 Azure Application Insights - Monitoramento e Telemetria
+// ============================================================================
+var appInsightsConnectionString = builder.Configuration["ApplicationInsights:ConnectionString"];
+if (!string.IsNullOrEmpty(appInsightsConnectionString))
+{
+    builder.Services.AddApplicationInsightsTelemetry(options =>
+    {
+        options.ConnectionString = appInsightsConnectionString;
+        options.EnableAdaptiveSampling = true; // Amostragem adaptativa para reduzir custos
+        options.EnableQuickPulseMetricStream = true; // Live Metrics Stream
+        options.EnableDependencyTrackingTelemetryModule = true; // Rastrear chamadas a APIs externas (Santander, etc.)
+        options.EnableRequestTrackingTelemetryModule = true; // Rastrear requisições HTTP
+        options.EnableEventCounterCollectionModule = true; // Coletar métricas do .NET
+    });
+
+    // Configurações adicionais de telemetria
+    builder.Services.Configure<TelemetryConfiguration>(config =>
+    {
+        config.DefaultTelemetrySink.TelemetryProcessorChainBuilder
+            .UseAdaptiveSampling(maxTelemetryItemsPerSecond: 5) // Limitar a 5 itens/segundo
+            .Build();
+    });
+
+    Console.WriteLine("📊 Application Insights configurado com sucesso!");
+}
+else
+{
+    Console.WriteLine("⚠️ Application Insights não configurado. Adicione 'ApplicationInsights:ConnectionString' no appsettings.json");
+    builder.Services.AddSingleton<TelemetryClient>(_ => new TelemetryClient(new TelemetryConfiguration()));
+}
+
+// Configure timezone for Brazil
+TimeZoneInfo brasiliaTimeZone = TimeZoneInfo.FindSystemTimeZoneById("E. South America Standard Time");
+
+// ✅ Configure Kestrel to accept large file uploads (remove size limits)
+builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>(options =>
+{
+    options.Limits.MaxRequestBodySize = null; // Remove limit (default is 30MB)
+    Console.WriteLine("✅ Kestrel: Limite de tamanho de requisição removido (aceita qualquer tamanho)");
+});
+
+// ✅ Configure FormOptions to accept large multipart bodies (for form uploads)
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = long.MaxValue; // Remove limit (default is ~28.6MB)
+    options.ValueLengthLimit = int.MaxValue; // Remove limit for individual form values
+    options.MultipartHeadersLengthLimit = int.MaxValue; // Remove limit for headers
+    Console.WriteLine("✅ FormOptions: Limites de tamanho removidos para uploads de formulários");
+});
 
 // Add services to the container.
 builder.Services.AddControllers()
@@ -20,13 +79,56 @@ builder.Services.AddControllers()
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+        options.JsonSerializerOptions.WriteIndented = true;
+        options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never;
     });
+
+// Rate Limiting - DESABILITADO (causava bloqueio excessivo)
+// builder.Services.AddRateLimiter(options =>
+// {
+//     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+//         RateLimitPartition.GetFixedWindowLimiter(
+//             partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+//             factory: partition => new FixedWindowRateLimiterOptions
+//             {
+//                 AutoReplenishment = true,
+//                 PermitLimit = 100, // 100 requisições
+//                 Window = TimeSpan.FromMinutes(1) // por minuto
+//             }));
+// 
+//     options.OnRejected = async (context, token) =>
+//     {
+//         context.HttpContext.Response.StatusCode = 429;
+//         await context.HttpContext.Response.WriteAsync(
+//             "Muitas requisições. Tente novamente em alguns segundos.",
+//             token
+//         );
+//     };
+// });
+
+// Swagger/OpenAPI - Documentação da API (.NET 10)
+// TEMPORARIAMENTE COMENTADO - Conflito de versão do Microsoft.OpenApi
+// builder.Services.AddEndpointsApiExplorer();
+// builder.Services.AddOpenApi("v1", options =>
+// {
+//     options.AddDocumentTransformer((document, context, cancellationToken) =>
+//     {
+//         document.Info = new()
+//         {
+//             Title = "CRM Arrighi API",
+//             Version = "v1",
+//             Description = "API do Sistema de CRM Arrighi Advogados"
+//         };
+//         return Task.CompletedTask;
+//     });
+// });
 
 // Configure Forwarded Headers for Reverse Proxy
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
-    options.KnownIPNetworks.Clear();
+    options.KnownNetworks.Clear();
     options.KnownProxies.Clear();
     // Allow all IPs for development - in production, specify your proxy IPs
     options.RequireHeaderSymmetry = false;
@@ -34,11 +136,96 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 });
 
 // Add Entity Framework
-var databaseConnectionString = GetDatabaseConnectionString(builder.Configuration);
-var databaseDataSource = CreateNpgsqlDataSource(databaseConnectionString);
-builder.Services.AddSingleton(databaseDataSource);
-builder.Services.AddDbContext<CrmArrighiContext>((serviceProvider, options) =>
-    options.UseNpgsql(serviceProvider.GetRequiredService<NpgsqlDataSource>()));
+builder.Services.AddDbContext<CrmArrighiContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// Register HttpClient
+builder.Services.AddHttpClient();
+
+// ============================================================================
+// 💾 In-Memory Cache - Cache de dados em memória
+// ============================================================================
+builder.Services.AddMemoryCache();
+Console.WriteLine("💾 Memory Cache configurado");
+
+// Register Santander Boleto Service (sem HttpClient injetado - cria o próprio com certificado)
+builder.Services.AddScoped<ISantanderBoletoService, SantanderBoletoService>();
+
+// Register Authorization Service
+builder.Services.AddScoped<IAuthorizationService, AuthorizationService>();
+
+// Register Permission Service
+builder.Services.AddScoped<IPermissionService, PermissionService>();
+
+// Register Group Access Service
+builder.Services.AddScoped<IGroupAccessService, GroupAccessService>();
+
+// Register Database Index Service (para manutenção de índices)
+builder.Services.AddScoped<DatabaseIndexService>();
+
+// Register Seed Data Service
+builder.Services.AddScoped<ISeedDataService, SeedDataService>();
+
+// Register Inadimplencia Analysis Service (IA de previsão de risco)
+builder.Services.AddScoped<IInadimplenciaAnalysisService, InadimplenciaAnalysisService>();
+
+// Register Forecast Service (Previsão de Receita)
+builder.Services.AddScoped<IForecastService, ForecastService>();
+
+// Register Dashboard Financeiro Service (Gráficos e KPIs financeiros)
+builder.Services.AddScoped<IDashboardFinanceiroService, DashboardFinanceiroService>();
+
+// Register Audit Service (Sistema de Auditoria)
+builder.Services.AddScoped<IAuditService, AuditService>();
+
+// Register Notificacao Service (Sistema de Notificações)
+builder.Services.AddScoped<INotificacaoService, NotificacaoService>();
+
+// Register Lead Service (Pipeline de Vendas)
+builder.Services.AddScoped<LeadService>();
+
+// Register Usuario Filial Service
+builder.Services.AddScoped<IUsuarioFilialService, UsuarioFilialService>();
+
+// Register Usuario Grupo Filial Service
+builder.Services.AddScoped<IUsuarioGrupoFilialService, UsuarioGrupoFilialService>();
+
+// Register Azure Blob Storage Service
+builder.Services.AddScoped<IAzureBlobStorageService, AzureBlobStorageService>();
+
+// Register Email Service
+builder.Services.AddScoped<IEmailService, EmailService>();
+
+// Register Telemetry Service (Application Insights)
+builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
+builder.Services.AddHttpContextAccessor(); // Necessário para o TelemetryInitializer
+builder.Services.AddSingleton<Microsoft.ApplicationInsights.Extensibility.ITelemetryInitializer, CrmArrighi.Telemetry.CrmTelemetryInitializer>();
+
+// Register Azure OpenAI Service (Assistente de IA)
+builder.Services.AddHttpClient<IAzureOpenAIService, AzureOpenAIService>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+    });
+Console.WriteLine("🤖 Azure OpenAI Service registrado");
+
+// ============================================================================
+// 🧠 RAG Services - Retrieval-Augmented Generation
+// ============================================================================
+builder.Services.AddScoped<CrmArrighi.Services.RAG.IIntentAnalyzer, CrmArrighi.Services.RAG.IntentAnalyzer>();
+builder.Services.AddScoped<CrmArrighi.Services.RAG.IContextRetriever, CrmArrighi.Services.RAG.ContextRetriever>();
+builder.Services.AddScoped<CrmArrighi.Services.RAG.IRagService, CrmArrighi.Services.RAG.RagService>();
+Console.WriteLine("🧠 RAG Services registrados (IntentAnalyzer, ContextRetriever, RagService)");
+
+// ============================================================================
+// 🏥 Health Checks - Monitoramento de Saúde
+// ============================================================================
+builder.Services.AddHealthChecks()
+    .AddCheck<SqlServerHealthCheck>("sql_server", tags: new[] { "critical", "database" })
+    .AddCheck<SantanderApiHealthCheck>("santander_api", tags: new[] { "external", "payments" })
+    .AddCheck<AzureStorageHealthCheck>("azure_storage", tags: new[] { "external", "storage" });
+
+Console.WriteLine("🏥 Health Checks configurados: SQL Server, Santander API, Azure Storage");
 
 // Add CORS
 builder.Services.AddCors(options =>
@@ -48,26 +235,121 @@ builder.Services.AddCors(options =>
         {
             builder.AllowAnyOrigin()
                    .AllowAnyMethod()
-                   .AllowAnyHeader();
+                   .AllowAnyHeader()
+                   .WithExposedHeaders("X-Convert-To-PDF", "X-Document-Title", "Content-Disposition");
         });
 
     options.AddPolicy("AllowVercel",
         builder =>
         {
             builder.WithOrigins(
-                    "https://payment-crm-frontend.vercel.app/",
+                    "https://arrighi-front-v1-copy.vercel.app",
+                    "https://arrighi-front-v1-copy.vercel.app/",
+                    "https://arrighicrm-front-v1.vercel.app",
+                    "https://arrighicrm-front-v1.vercel.app/",
+                    "https://arrighicrm.com",
+                    "https://www.arrighicrm.com",
+                    "https://contratos-bk-gag8afd6degtdca4.brazilsouth-01.azurewebsites.net",
                     "http://localhost:3000",
                     "http://localhost:3001"
                 )
                 .AllowAnyMethod()
                 .AllowAnyHeader()
-                .AllowCredentials();
+                .AllowCredentials()
+                .WithExposedHeaders("X-Convert-To-PDF", "X-Document-Title", "Content-Disposition");
         });
 });
 
 var app = builder.Build();
 
-// Database will be created when needed
+// 🔥 Executar migration AddDataHoraOffline automaticamente ao iniciar
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var context = services.GetRequiredService<CrmArrighiContext>();
+        Console.WriteLine("🔄 Executando migration AddDataHoraOfflineToSessaoAtiva...");
+        await ExecuteMigrationHelper.ExecuteAddDataHoraOfflineMigrationAsync(context);
+        Console.WriteLine("✅ Migration executada com sucesso!");
+    }
+    catch (Exception ex)
+    {
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "❌ Erro ao executar migration AddDataHoraOfflineToSessaoAtiva");
+        Console.WriteLine($"❌ Erro: {ex.Message}");
+    }
+}
+
+// 🔥 Criar tabela PasswordResets automaticamente ao iniciar
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var context = services.GetRequiredService<CrmArrighiContext>();
+        Console.WriteLine("🔄 Verificando tabela PasswordResets...");
+        await PasswordResetTableHelper.EnsurePasswordResetTableExistsAsync(context);
+        Console.WriteLine("✅ Tabela PasswordResets pronta!");
+    }
+    catch (Exception ex)
+    {
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "❌ Erro ao verificar/criar tabela PasswordResets");
+        Console.WriteLine($"❌ Erro: {ex.Message}");
+    }
+}
+
+// 🔥 Criar tabela AuditLogs automaticamente ao iniciar
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var context = services.GetRequiredService<CrmArrighiContext>();
+        Console.WriteLine("🔄 Verificando tabela AuditLogs...");
+        await context.Database.ExecuteSqlRawAsync(@"
+            IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'AuditLogs')
+            BEGIN
+                CREATE TABLE [AuditLogs] (
+                    [Id] int NOT NULL IDENTITY(1,1),
+                    [UsuarioId] int NOT NULL,
+                    [UsuarioNome] nvarchar(200) NOT NULL,
+                    [UsuarioLogin] nvarchar(100) NULL,
+                    [GrupoAcesso] nvarchar(100) NULL,
+                    [Acao] nvarchar(50) NOT NULL,
+                    [Entidade] nvarchar(100) NOT NULL,
+                    [EntidadeId] int NULL,
+                    [Descricao] nvarchar(500) NOT NULL,
+                    [ValorAnterior] nvarchar(max) NULL,
+                    [ValorNovo] nvarchar(max) NULL,
+                    [CamposAlterados] nvarchar(1000) NULL,
+                    [IpAddress] nvarchar(50) NULL,
+                    [UserAgent] nvarchar(500) NULL,
+                    [Modulo] nvarchar(100) NULL,
+                    [Severidade] nvarchar(20) NOT NULL DEFAULT 'Info',
+                    [DataHora] datetime2 NOT NULL,
+                    CONSTRAINT [PK_AuditLogs] PRIMARY KEY ([Id])
+                );
+
+                CREATE INDEX [IX_AuditLogs_UsuarioId] ON [AuditLogs] ([UsuarioId]);
+                CREATE INDEX [IX_AuditLogs_DataHora] ON [AuditLogs] ([DataHora]);
+                CREATE INDEX [IX_AuditLogs_Acao] ON [AuditLogs] ([Acao]);
+                CREATE INDEX [IX_AuditLogs_Entidade] ON [AuditLogs] ([Entidade]);
+                CREATE INDEX [IX_AuditLogs_Severidade] ON [AuditLogs] ([Severidade]);
+
+                PRINT 'Tabela AuditLogs criada com sucesso!';
+            END
+        ");
+        Console.WriteLine("✅ Tabela AuditLogs pronta!");
+    }
+    catch (Exception ex)
+    {
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "❌ Erro ao verificar/criar tabela AuditLogs");
+        Console.WriteLine($"❌ Erro AuditLogs: {ex.Message}");
+    }
+}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
@@ -81,79 +363,60 @@ app.UseForwardedHeaders();
 // Use custom Reverse Proxy middleware
 app.UseReverseProxy();
 
+// OpenAPI/Swagger - Documentação interativa da API (.NET 10)
+if (app.Environment.IsDevelopment())
+{
+    // TEMPORARIAMENTE COMENTADO - Conflito de versão do Microsoft.OpenApi
+    // app.MapOpenApi(); // Endpoint: /openapi/v1.json
+    // app.UseSwaggerUI(c =>
+    // {
+    //     c.SwaggerEndpoint("/openapi/v1.json", "CRM Arrighi API v1");
+    //     c.RoutePrefix = "swagger"; // Acesse em: http://localhost:5000/swagger
+    // });
+}
+
 app.UseHttpsRedirection();
 app.UseCors("AllowAll");
+
+// 🔒 Idempotency Middleware - Evita processamento duplicado de requisições
+app.UseIdempotency();
+
 app.UseAuthorization();
 
 app.MapControllers();
 
-// Criar tabela Parceiros se não existir
+// Criar tabelas se não existirem e popular dados iniciais
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<CrmArrighiContext>();
+    var seedDataService = scope.ServiceProvider.GetRequiredService<ISeedDataService>();
+
+    // Criar tabelas de Grupos de Acesso primeiro
+    await CrmArrighi.Helpers.CreateGruposAcessoTableHelper.CreateGruposAcessoTablesIfNotExists(context);
+
+    // Criar tabela de Parceiros
     await CreateTableHelper.CreateParceirosTableIfNotExists(context);
+
+    // Criar tabela de Sessões Ativas
+    await CreateTableHelper.CreateSessoesAtivasTableIfNotExists(context);
+
+    // Criar tabela de Histórico de Clientes
+    await CreateTableHelper.CreateHistoricoClientesTableIfNotExists(context);
+
+    // Criar tabela de Documentos do Portal
+    await CreateTableHelper.CreateDocumentosPortalTableIfNotExists(context);
+
+    // Fazer seed dos dados
+    await seedDataService.SeedAllAsync();
+
+    // 🔥 Verificar e corrigir grupo Administrador após seed
+    Console.WriteLine("🔄 Verificando configuração do grupo Administrador...");
+    await AdminGroupHelper.EnsureAdminGroupIsCorrectAsync(context);
+    await AdminGroupHelper.ListAdministratorsAsync(context);
+    Console.WriteLine("✅ Verificação do grupo Administrador concluída!");
 }
+
+// Rate Limiting - DESABILITADO
+// app.UseRateLimiter();
 
 app.Run();
-
-static string GetDatabaseConnectionString(IConfiguration configuration)
-{
-    var configuredConnectionString = configuration.GetConnectionString("DefaultConnection");
-    if (!string.IsNullOrWhiteSpace(configuredConnectionString))
-    {
-        return configuredConnectionString;
-    }
-
-    var host = configuration["PGHOST"];
-    var user = configuration["PGUSER"];
-    var database = configuration["PGDATABASE"];
-    var password = configuration["PGPASSWORD"];
-
-    if (string.IsNullOrWhiteSpace(host) ||
-        string.IsNullOrWhiteSpace(user) ||
-        string.IsNullOrWhiteSpace(database))
-    {
-        throw new InvalidOperationException(
-            "Configure ConnectionStrings__DefaultConnection or PGHOST, PGUSER and PGDATABASE.");
-    }
-
-    var builder = new NpgsqlConnectionStringBuilder
-    {
-        Host = host,
-        Port = int.TryParse(configuration["PGPORT"], out var port) ? port : 5432,
-        Database = database,
-        Username = user,
-        SslMode = SslMode.Require,
-        Pooling = true
-    };
-
-    if (!string.IsNullOrWhiteSpace(password))
-    {
-        builder.Password = password;
-    }
-
-    return builder.ConnectionString;
-}
-
-static NpgsqlDataSource CreateNpgsqlDataSource(string connectionString)
-{
-    var connectionStringBuilder = new NpgsqlConnectionStringBuilder(connectionString);
-    var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionStringBuilder.ConnectionString);
-
-    if (string.IsNullOrWhiteSpace(connectionStringBuilder.Password))
-    {
-        var credential = new DefaultAzureCredential();
-        var tokenRequestContext = new TokenRequestContext([PostgreSqlAadScope]);
-
-        dataSourceBuilder.UsePeriodicPasswordProvider(
-            async (_, cancellationToken) =>
-            {
-                var token = await credential.GetTokenAsync(tokenRequestContext, cancellationToken);
-                return token.Token;
-            },
-            TimeSpan.FromMinutes(55),
-            TimeSpan.FromSeconds(5));
-    }
-
-    return dataSourceBuilder.Build();
-}

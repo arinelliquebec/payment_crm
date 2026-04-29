@@ -15,25 +15,27 @@ export function useAtividades() {
 
   // Carregar atividades do localStorage ao inicializar
   useEffect(() => {
-    const atividadesSalvas = localStorage.getItem("crm_atividades");
-    if (atividadesSalvas) {
-      try {
-        const atividadesParseadas = JSON.parse(atividadesSalvas).map(
-          (ativ: any) => ({
-            ...ativ,
-            timestamp: new Date(ativ.timestamp),
-          })
-        );
-        setAtividades(atividadesParseadas);
-      } catch (error) {
-        console.error("Erro ao carregar atividades:", error);
+    if (typeof window !== "undefined") {
+      const atividadesSalvas = localStorage.getItem("crm_atividades");
+      if (atividadesSalvas) {
+        try {
+          const atividadesParseadas = JSON.parse(atividadesSalvas).map(
+            (ativ: any) => ({
+              ...ativ,
+              timestamp: new Date(ativ.timestamp),
+            })
+          );
+          setAtividades(atividadesParseadas);
+        } catch (error) {
+          console.error("Erro ao carregar atividades:", error);
+        }
       }
     }
   }, []);
 
   // Salvar atividades no localStorage sempre que houver mudanças
   useEffect(() => {
-    if (atividades.length > 0) {
+    if (typeof window !== "undefined" && atividades.length > 0) {
       localStorage.setItem("crm_atividades", JSON.stringify(atividades));
     }
   }, [atividades]);

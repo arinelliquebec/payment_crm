@@ -29,8 +29,9 @@ namespace CrmArrighi.Models
         [StringLength(1000, ErrorMessage = "As observações devem ter no máximo 1000 caracteres")]
         public string? Observacoes { get; set; }
 
-        [Range(0, double.MaxValue, ErrorMessage = "O valor do contrato deve ser maior ou igual a zero")]
-        public decimal ValorContrato { get; set; } = 0;
+        [StringLength(255, ErrorMessage = "O email alternativo deve ter no máximo 255 caracteres")]
+        [EmailAddress(ErrorMessage = "O email alternativo deve ser um endereço de email válido")]
+        public string? EmailAlternativo { get; set; }
 
         public DateTime DataCadastro { get; set; } = DateTime.Now;
         public DateTime? DataAtualizacao { get; set; }

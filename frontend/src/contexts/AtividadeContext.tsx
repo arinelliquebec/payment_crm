@@ -47,9 +47,17 @@ export function AtividadeProvider({ children }: { children: ReactNode }) {
 export function useAtividadeContext() {
   const context = useContext(AtividadeContext);
   if (context === undefined) {
-    throw new Error(
+    console.error(
       "useAtividadeContext deve ser usado dentro de um AtividadeProvider"
     );
+    // Retornar um contexto padrão em vez de lançar erro
+    return {
+      atividades: [],
+      adicionarAtividade: () => {},
+      obterAtividadesRecentes: () => [],
+      limparAtividades: () => {},
+      removerAtividade: () => {},
+    };
   }
   return context;
 }

@@ -3,6 +3,20 @@
 import { useState, useEffect, useCallback, memo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
+  validateCPF,
+  formatCPF,
+  validateEmail,
+  validatePhone,
+  formatPhone,
+  validateCEP,
+  formatCEP,
+  validateFullName,
+  validateRG,
+  validateCNH,
+  sanitizeString,
+  normalizeEmail,
+} from "../../utils/validators";
+import {
   Save,
   X,
   Loader2,
@@ -26,7 +40,6 @@ import {
   UpdatePessoaFisicaDTO,
   PessoaFisica,
   SexoOptions,
-  EstadoCivilOptions,
 } from "@/types/api";
 import { cn } from "@/lib/utils";
 import { consultarCep, CepData } from "@/lib/cep";
@@ -42,8 +55,8 @@ interface PessoaFisicaFormProps {
 
 interface FormData {
   nome: string;
-  email: string;
-  codinome: string;
+  emailEmpresarial: string;
+  emailPessoal: string;
   sexo: string;
   dataNascimento: string;
   estadoCivil: string;
@@ -59,6 +72,7 @@ interface FormData {
     cep: string;
     numero: string;
     complemento: string;
+    estado: string;
   };
 }
 
@@ -76,8 +90,8 @@ interface InputFieldProps {
 
 const initialFormData: FormData = {
   nome: "",
-  email: "",
-  codinome: "",
+  emailEmpresarial: "",
+  emailPessoal: "",
   sexo: "",
   dataNascimento: "",
   estadoCivil: "",
@@ -93,6 +107,7 @@ const initialFormData: FormData = {
     cep: "",
     numero: "",
     complemento: "",
+    estado: "",
   },
 };
 
@@ -142,13 +157,13 @@ const InputField = memo(
             "absolute left-4 transition-all duration-300 pointer-events-none z-10",
             "text-sm font-medium",
             isFocused || value
-              ? "-top-2 text-xs bg-white px-2 rounded-full"
-              : "top-4 text-secondary-500",
-            isFocused ? "text-primary-600" : "text-secondary-500",
-            error && "text-red-500"
+              ? "-top-2 text-xs bg-neutral-800 px-2 rounded-full border border-neutral-700/50"
+              : "top-4 text-neutral-500",
+            isFocused ? "text-amber-400" : "text-neutral-400",
+            error && "text-red-400"
           )}
         >
-          {label} {required && <span className="text-red-500">*</span>}
+          {label} {required && <span className="text-red-400">*</span>}
         </label>
 
         <div className="relative">
@@ -156,8 +171,8 @@ const InputField = memo(
             <div
               className={cn(
                 "absolute left-4 top-1/2 -translate-y-1/2 transition-colors duration-300",
-                isFocused ? "text-primary-600" : "text-secondary-400",
-                error && "text-red-500"
+                isFocused ? "text-amber-400" : "text-neutral-500",
+                error && "text-red-400"
               )}
             >
               {icon}
@@ -174,21 +189,27 @@ const InputField = memo(
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
               className={cn(
-                "w-full h-14 px-4 bg-white/80 backdrop-blur-sm rounded-2xl",
+                "w-full h-14 px-4 bg-neutral-900/95 backdrop-blur-sm rounded-2xl",
                 "border-2 transition-all duration-300",
                 "focus:outline-none focus:ring-4",
+                "text-neutral-200",
                 icon && "pl-12",
                 isFocused
-                  ? "border-primary-500 ring-primary-500/20 shadow-lg shadow-primary-500/10"
-                  : "border-secondary-200 hover:border-secondary-300",
+                  ? "border-amber-500/50 ring-amber-500/20 shadow-lg shadow-amber-500/10"
+                  : "border-neutral-700/30 hover:border-neutral-600/50",
                 error && "border-red-500 focus:ring-red-500/20",
-                "appearance-none cursor-pointer"
+                "appearance-none cursor-pointer",
+                "[&>option]:bg-neutral-900 [&>option]:text-neutral-200"
               )}
               required={required}
             >
-              <option value=""></option>
+              <option value="" className="text-neutral-500"></option>
               {options.map((option) => (
-                <option key={option.value} value={option.value}>
+                <option
+                  key={option.value}
+                  value={option.value}
+                  className="bg-neutral-900 text-neutral-200"
+                >
                   {option.label}
                 </option>
               ))}
@@ -205,15 +226,15 @@ const InputField = memo(
               onBlur={() => setIsFocused(false)}
               placeholder={type === "date" ? "" : placeholder}
               className={cn(
-                "w-full h-14 px-4 bg-white/80 backdrop-blur-sm rounded-2xl",
+                "w-full h-14 px-4 bg-neutral-900/95 backdrop-blur-sm rounded-2xl",
                 "border-2 transition-all duration-300",
                 "focus:outline-none focus:ring-4",
-                "placeholder:text-transparent",
+                "placeholder:text-transparent text-neutral-100 font-medium",
                 icon && "pl-12",
 
                 isFocused
-                  ? "border-primary-500 ring-primary-500/20 shadow-lg shadow-primary-500/10"
-                  : "border-secondary-200 hover:border-secondary-300",
+                  ? "border-amber-500/50 ring-amber-500/20 shadow-lg shadow-amber-500/10"
+                  : "border-neutral-700/30 hover:border-neutral-600/50",
                 error && "border-red-500 focus:ring-red-500/20"
               )}
               required={required}
@@ -244,8 +265,8 @@ const InputField = memo(
               exit={{ opacity: 0, y: -10 }}
               className="flex items-center gap-2 mt-2 px-4"
             >
-              <AlertCircle className="w-4 h-4 text-red-500" />
-              <p className="text-sm text-red-600">{error}</p>
+              <AlertCircle className="w-4 h-4 text-red-400" />
+              <p className="text-sm text-red-400">{error}</p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -274,13 +295,13 @@ const FormSection = ({
     transition={{ duration: 0.5, delay }}
     className="relative"
   >
-    <div className="absolute inset-0 bg-gradient-to-br from-primary-500/5 to-accent-500/5 rounded-3xl blur-xl" />
-    <div className="relative bg-white/70 backdrop-blur-xl rounded-3xl p-8 border border-white/50 shadow-xl">
+    <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 to-amber-600/5 rounded-3xl blur-xl" />
+    <div className="relative bg-neutral-900/30 backdrop-blur-xl rounded-3xl p-8 border border-neutral-700/30 shadow-xl">
       <div className="flex items-center gap-4 mb-8">
-        <div className="p-3 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl text-white shadow-lg shadow-primary-500/30">
+        <div className="p-3 bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl text-neutral-900 shadow-lg shadow-amber-500/30">
           {icon}
         </div>
-        <h3 className="text-xl font-bold text-secondary-900">{title}</h3>
+        <h3 className="text-xl font-bold text-neutral-100">{title}</h3>
       </div>
       <div className="space-y-6">{children}</div>
     </div>
@@ -295,15 +316,14 @@ export default function PessoaFisicaForm({
 }: PessoaFisicaFormProps) {
   const [formData, setFormData] = useState<FormData>(initialFormData);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [currentStep, setCurrentStep] = useState(0);
 
   // Inicializar dados se for edição
   useEffect(() => {
     if (initialData) {
       setFormData({
         nome: initialData.nome || "",
-        email: initialData.email || "",
-        codinome: initialData.codinome || "",
+        emailEmpresarial: initialData.emailEmpresarial || "",
+        emailPessoal: initialData.emailPessoal || "",
         sexo: initialData.sexo || "",
         dataNascimento: initialData.dataNascimento || "",
         estadoCivil: initialData.estadoCivil || "",
@@ -320,6 +340,7 @@ export default function PessoaFisicaForm({
               cep: initialData.endereco.cep || "",
               numero: initialData.endereco.numero || "",
               complemento: initialData.endereco.complemento || "",
+              estado: initialData.endereco.estado || "",
             }
           : {
               cidade: "",
@@ -327,6 +348,7 @@ export default function PessoaFisicaForm({
               logradouro: "",
               cep: "",
               numero: "",
+              estado: "",
               complemento: "",
             },
       });
@@ -460,6 +482,7 @@ export default function PessoaFisicaForm({
               logradouro: cepData.logradouro,
               bairro: cepData.bairro,
               cidade: cepData.cidade,
+              estado: cepData.estado,
               numero: prev.endereco.numero,
               complemento: cepData.complemento || prev.endereco.complemento,
             },
@@ -474,39 +497,90 @@ export default function PessoaFisicaForm({
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    // Validações básicas
-    if (!formData.nome.trim()) newErrors.nome = "Nome é obrigatório";
-    if (!formData.email.trim()) newErrors.email = "E-mail é obrigatório";
-    if (!formData.sexo) newErrors.sexo = "Sexo é obrigatório";
-    if (!formData.dataNascimento)
-      newErrors.dataNascimento = "Data de nascimento é obrigatória";
-    if (!formData.estadoCivil)
-      newErrors.estadoCivil = "Estado civil é obrigatório";
-    if (!formData.cpf.trim()) newErrors.cpf = "CPF é obrigatório";
+    // Validações robustas usando os novos validadores
 
-    // Validação de telefone
-    if (!formData.telefone1.trim()) {
-      newErrors.telefone1 = "Telefone é obrigatório";
-    } else {
-      const telefoneNumeros = formData.telefone1.replace(/\D/g, "");
-      if (telefoneNumeros.length < 10) {
-        newErrors.telefone1 = "Telefone deve ter pelo menos 10 dígitos";
-      } else if (telefoneNumeros.length > 11) {
-        newErrors.telefone1 = "Telefone deve ter no máximo 11 dígitos";
+    // Nome completo
+    if (!validateFullName(formData.nome)) {
+      if (!formData.nome.trim()) {
+        newErrors.nome = "Nome é obrigatório";
+      } else {
+        newErrors.nome =
+          "Informe nome e sobrenome completos (2-200 caracteres)";
       }
     }
 
-    // Validações de endereço
-    if (!formData.endereco.cidade.trim())
+    // E-mail empresarial
+    if (!formData.emailEmpresarial.trim()) {
+      newErrors.emailEmpresarial = "E-mail empresarial é obrigatório";
+    } else if (!validateEmail(formData.emailEmpresarial)) {
+      newErrors.emailEmpresarial = "E-mail empresarial inválido";
+    }
+
+    // E-mail pessoal (opcional)
+    if (formData.emailPessoal && !validateEmail(formData.emailPessoal)) {
+      newErrors.emailPessoal = "E-mail pessoal inválido";
+    }
+
+    // CPF
+    if (!formData.cpf.trim()) {
+      newErrors.cpf = "CPF é obrigatório";
+    } else if (!validateCPF(formData.cpf)) {
+      newErrors.cpf = "CPF inválido";
+    }
+
+    // Data de nascimento e idade
+    if (!formData.dataNascimento) {
+      newErrors.dataNascimento = "Data de nascimento é obrigatória";
+    }
+
+    // Sexo
+    if (!formData.sexo) {
+      newErrors.sexo = "Sexo é obrigatório";
+    }
+
+    // Telefone principal
+    if (!formData.telefone1.trim()) {
+      newErrors.telefone1 = "Telefone principal é obrigatório";
+    } else if (!validatePhone(formData.telefone1)) {
+      newErrors.telefone1 = "Telefone principal inválido";
+    }
+
+    // Telefone secundário (opcional)
+    if (formData.telefone2 && !validatePhone(formData.telefone2)) {
+      newErrors.telefone2 = "Telefone secundário inválido";
+    }
+
+    // Campos opcionais
+    if (!validateRG(formData.rg)) {
+      newErrors.rg = "RG não pode exceder 20 caracteres";
+    }
+
+    if (!validateCNH(formData.cnh)) {
+      newErrors.cnh = "CNH não pode exceder 20 caracteres";
+    }
+
+    // Endereço
+    if (!formData.endereco.cidade.trim()) {
       newErrors["endereco.cidade"] = "Cidade é obrigatória";
-    if (!formData.endereco.bairro.trim())
+    }
+
+    if (!formData.endereco.bairro.trim()) {
       newErrors["endereco.bairro"] = "Bairro é obrigatório";
-    if (!formData.endereco.logradouro.trim())
+    }
+
+    if (!formData.endereco.logradouro.trim()) {
       newErrors["endereco.logradouro"] = "Logradouro é obrigatório";
-    if (!formData.endereco.cep.trim())
-      newErrors["endereco.cep"] = "CEP é obrigatório";
-    if (!formData.endereco.numero.trim())
+    }
+
+    if (!formData.endereco.numero.trim()) {
       newErrors["endereco.numero"] = "Número é obrigatório";
+    }
+
+    if (!formData.endereco.cep.trim()) {
+      newErrors["endereco.cep"] = "CEP é obrigatório";
+    } else if (!validateCEP(formData.endereco.cep)) {
+      newErrors["endereco.cep"] = "CEP inválido";
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -526,11 +600,11 @@ export default function PessoaFisicaForm({
 
     const submitData: CreatePessoaFisicaDTO = {
       nome: formData.nome,
-      email: formData.email,
-      codinome: formData.codinome || undefined,
+      emailEmpresarial: formData.emailEmpresarial,
+      emailPessoal: formData.emailPessoal || undefined,
       sexo: formData.sexo,
       dataNascimento: dataNascimento,
-      estadoCivil: formData.estadoCivil,
+      estadoCivil: formData.estadoCivil || "",
       cpf: formData.cpf,
       rg: formData.rg || undefined,
       cnh: formData.cnh || undefined,
@@ -543,6 +617,7 @@ export default function PessoaFisicaForm({
         cep: formData.endereco.cep,
         numero: formData.endereco.numero,
         complemento: formData.endereco.complemento || undefined,
+        estado: formData.endereco.estado,
       },
     };
 
@@ -566,43 +641,12 @@ export default function PessoaFisicaForm({
     }
   };
 
-  // Indicador de progresso
-  const ProgressIndicator = () => (
-    <div className="flex items-center justify-center mb-8">
-      <div className="flex items-center gap-4">
-        {["Dados Pessoais", "Documentos", "Contato", "Endereço"].map(
-          (step, index) => (
-            <div key={step} className="flex items-center">
-              <motion.div
-                initial={{ scale: 0.8 }}
-                animate={{
-                  scale: currentStep >= index ? 1 : 0.8,
-                  backgroundColor: currentStep >= index ? "#0ea5e9" : "#e2e8f0",
-                }}
-                className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-lg"
-              >
-                {index + 1}
-              </motion.div>
-              {index < 3 && (
-                <motion.div
-                  initial={{ scaleX: 0 }}
-                  animate={{ scaleX: currentStep > index ? 1 : 0 }}
-                  className="w-16 h-1 bg-primary-500 origin-left"
-                />
-              )}
-            </div>
-          )
-        )}
-      </div>
-    </div>
-  );
-
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className="bg-gradient-to-br from-secondary-50 via-white to-primary-50 rounded-3xl p-8 shadow-2xl backdrop-blur-xl"
+      className="bg-neutral-900/95 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-neutral-800"
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
@@ -611,14 +655,14 @@ export default function PessoaFisicaForm({
           animate={{ opacity: 1, x: 0 }}
           className="flex items-center gap-4"
         >
-          <div className="p-4 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl text-white shadow-xl shadow-primary-500/30">
+          <div className="p-4 bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl text-neutral-900 shadow-xl shadow-amber-500/30">
             <User className="w-8 h-8" />
           </div>
           <div>
-            <h2 className="text-3xl font-bold bg-gradient-to-r from-primary-600 to-primary-800 bg-clip-text text-transparent">
+            <h2 className="text-3xl font-bold bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent">
               {initialData ? "Editar Pessoa Física" : "Nova Pessoa Física"}
             </h2>
-            <p className="text-secondary-600 mt-1">
+            <p className="text-neutral-400 mt-1">
               Preencha os dados do cliente com atenção
             </p>
           </div>
@@ -628,14 +672,11 @@ export default function PessoaFisicaForm({
           whileHover={{ scale: 1.1, rotate: 90 }}
           whileTap={{ scale: 0.9 }}
           onClick={onCancel}
-          className="p-3 text-secondary-400 hover:text-red-600 hover:bg-red-50 rounded-2xl transition-all duration-300"
+          className="p-3 text-neutral-400 hover:text-red-400 hover:bg-red-500/10 rounded-2xl transition-all duration-300 border border-transparent hover:border-red-500/30"
         >
           <X className="w-6 h-6" />
         </motion.button>
       </div>
-
-      {/* Progress Indicator */}
-      <ProgressIndicator />
 
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* Dados Pessoais */}
@@ -655,22 +696,23 @@ export default function PessoaFisicaForm({
               icon={<User className="w-5 h-5" />}
             />
             <InputField
-              label="E-mail"
-              name="email"
+              label="E-mail Empresarial"
+              name="emailEmpresarial"
               type="email"
               required
-              value={formData.email}
-              onChange={(value) => handleFieldChange("email", value)}
-              error={errors.email}
+              value={formData.emailEmpresarial}
+              onChange={(value) => handleFieldChange("emailEmpresarial", value)}
+              error={errors.emailEmpresarial}
               icon={<Mail className="w-5 h-5" />}
             />
             <InputField
-              label="Apelido/Codinome"
-              name="codinome"
-              value={formData.codinome}
-              onChange={(value) => handleFieldChange("codinome", value)}
-              error={errors.codinome}
-              icon={<User className="w-5 h-5" />}
+              label="E-mail Pessoal"
+              name="emailPessoal"
+              type="email"
+              value={formData.emailPessoal}
+              onChange={(value) => handleFieldChange("emailPessoal", value)}
+              error={errors.emailPessoal}
+              icon={<Mail className="w-5 h-5" />}
             />
             <InputField
               label="Sexo"
@@ -693,16 +735,6 @@ export default function PessoaFisicaForm({
               formatter={formatData}
               icon={<Calendar className="w-5 h-5" />}
               placeholder="dd/mm/aaaa"
-            />
-            <InputField
-              label="Estado Civil"
-              name="estadoCivil"
-              options={EstadoCivilOptions}
-              required
-              value={formData.estadoCivil}
-              onChange={(value) => handleFieldChange("estadoCivil", value)}
-              error={errors.estadoCivil}
-              icon={<User className="w-5 h-5" />}
             />
           </div>
         </FormSection>
@@ -847,6 +879,17 @@ export default function PessoaFisicaForm({
               error={errors["endereco.cidade"]}
               icon={<Building className="w-5 h-5" />}
             />
+            <InputField
+              label="Estado"
+              name="estado"
+              isEndereco
+              required
+              value={formData.endereco.estado}
+              onChange={(value) => handleFieldChange("estado", value, true)}
+              error={errors["endereco.estado"]}
+              icon={<MapPin className="w-5 h-5" />}
+              placeholder="UF"
+            />
           </div>
         </FormSection>
 
@@ -862,7 +905,7 @@ export default function PessoaFisicaForm({
             onClick={onCancel}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="px-8 py-4 text-secondary-700 bg-white border-2 border-secondary-300 rounded-2xl hover:bg-secondary-50 hover:border-secondary-400 transition-all duration-300 font-semibold shadow-lg hover:shadow-xl"
+            className="px-8 py-4 text-neutral-300 bg-neutral-800/50 border-2 border-neutral-700 rounded-2xl hover:bg-neutral-800 hover:border-neutral-600 transition-all duration-300 font-semibold shadow-lg hover:shadow-xl"
           >
             Cancelar
           </motion.button>
@@ -872,9 +915,9 @@ export default function PessoaFisicaForm({
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             className={cn(
-              "px-8 py-4 bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-2xl",
-              "hover:from-primary-700 hover:to-primary-800 disabled:opacity-50 disabled:cursor-not-allowed",
-              "transition-all duration-300 font-semibold shadow-xl hover:shadow-2xl",
+              "px-8 py-4 bg-gradient-to-r from-amber-500 to-amber-600 text-neutral-900 rounded-2xl",
+              "hover:from-amber-600 hover:to-amber-700 disabled:opacity-50 disabled:cursor-not-allowed",
+              "transition-all duration-300 font-semibold shadow-xl hover:shadow-2xl shadow-amber-500/30",
               "flex items-center gap-3"
             )}
           >

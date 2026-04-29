@@ -16,7 +16,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { Cliente, HistoricoConsultor } from "@/types/api";
-import { cn } from "@/lib/utils";
+import { cn, formatCPFDisplay, formatCNPJDisplay } from "@/lib/utils";
 
 interface ClienteDetalhesProps {
   cliente: Cliente;
@@ -37,12 +37,14 @@ export default function ClienteDetalhes({
     if (cliente.tipoPessoa === "Fisica") {
       return cliente.pessoaFisica?.nome || "Nome não informado";
     } else {
-      return cliente.pessoaJuridica?.razaoSocial || "Razão social não informada";
+      return (
+        cliente.pessoaJuridica?.razaoSocial || "Razão social não informada"
+      );
     }
   };
 
   const getConsultorAtual = () => {
-    const historicoAtivo = historico.find(h => !h.dataFim);
+    const historicoAtivo = historico.find((h) => !h.dataFim);
     return historicoAtivo?.consultor;
   };
 
@@ -64,9 +66,11 @@ export default function ClienteDetalhes({
       );
     } else {
       return (
-        <div className="flex items-center space-x-1 text-yellow-600">
+        <div className="flex items-center space-x-1 text-amber-600">
           <Clock className="w-4 h-4" />
-          <span className="text-sm font-medium">{cliente.status || "Não definido"}</span>
+          <span className="text-sm font-medium">
+            {cliente.status || "Não definido"}
+          </span>
         </div>
       );
     }
@@ -77,7 +81,7 @@ export default function ClienteDetalhes({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[99999] flex items-center justify-center p-4"
     >
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
@@ -127,19 +131,24 @@ export default function ClienteDetalhes({
                       <Building2 className="w-4 h-4 text-secondary-400" />
                     )}
                     <span className="text-sm text-secondary-600">
-                      Tipo: {cliente.tipoPessoa === "Fisica" ? "Pessoa Física" : "Pessoa Jurídica"}
+                      Tipo:{" "}
+                      {cliente.tipoPessoa === "Fisica"
+                        ? "Pessoa Física"
+                        : "Pessoa Jurídica"}
                     </span>
                   </div>
                   <div className="flex items-center space-x-3">
                     <Mail className="w-4 h-4 text-secondary-400" />
                     <span className="text-sm text-secondary-600">
-                      {cliente.pessoaFisica?.email || cliente.pessoaJuridica?.email}
+                      {cliente.pessoaFisica?.emailEmpresarial ||
+                        cliente.pessoaJuridica?.email}
                     </span>
                   </div>
                   <div className="flex items-center space-x-3">
                     <Phone className="w-4 h-4 text-secondary-400" />
                     <span className="text-sm text-secondary-600">
-                      {cliente.pessoaFisica?.telefone1 || cliente.pessoaJuridica?.telefone1}
+                      {cliente.pessoaFisica?.telefone1 ||
+                        cliente.pessoaJuridica?.telefone1}
                     </span>
                   </div>
                   <div className="flex items-center space-x-3">
@@ -174,14 +183,14 @@ export default function ClienteDetalhes({
                     <div className="flex items-center space-x-3">
                       <FileText className="w-4 h-4 text-secondary-400" />
                       <span className="text-sm text-secondary-600">
-                        CPF: {cliente.pessoaFisica?.cpf}
+                        CPF: {formatCPFDisplay(cliente.pessoaFisica?.cpf)}
                       </span>
                     </div>
                   ) : (
                     <div className="flex items-center space-x-3">
                       <FileText className="w-4 h-4 text-secondary-400" />
                       <span className="text-sm text-secondary-600">
-                        CNPJ: {cliente.pessoaJuridica?.cnpj}
+                        CNPJ: {formatCNPJDisplay(cliente.pessoaJuridica?.cnpj)}
                       </span>
                     </div>
                   )}
@@ -240,17 +249,15 @@ export default function ClienteDetalhes({
               </h3>
               <div className="space-y-3">
                 {historico.map((item) => (
-                  <div
-                    key={item.id}
-                    className="bg-secondary-50 rounded-lg p-3"
-                  >
+                  <div key={item.id} className="bg-secondary-50 rounded-lg p-3">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium text-secondary-900">
                           {item.consultor?.pessoaFisica?.nome}
                         </p>
                         <p className="text-sm text-secondary-600">
-                          {formatDate(item.dataInicio)} - {item.dataFim ? formatDate(item.dataFim) : "Atual"}
+                          {formatDate(item.dataInicio)} -{" "}
+                          {item.dataFim ? formatDate(item.dataFim) : "Atual"}
                         </p>
                       </div>
                       {!item.dataFim && (
