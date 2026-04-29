@@ -1,0 +1,63 @@
+# .NET build outputs
+bin/
+obj/
+publish/
+artifacts/
+TestResults/
+coverage/
+coveragereport/
+
+# User-specific IDE files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+appsettings.Development.json
+appsettings.Local.json
+appsettings.Production.json
+appsettings.Staging.json
+secrets.json
+*.pfx
+*.p12
+*.pem
+*.key
+*.crt
+
+# Logs
+*.log
+logs/
+
+# Local databases and dumps
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+*.backup
+*.bacpac
+*.sql.gz
+*.dump
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
