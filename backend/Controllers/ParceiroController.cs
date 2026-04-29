@@ -306,45 +306,7 @@ namespace CrmArrighi.Controllers
 
         private async Task EnsureParceirosTableExists()
         {
-            try
-            {
-                // Tentar executar uma query simples na tabela Parceiros
-                await _context.Database.ExecuteSqlRawAsync("SELECT TOP 1 * FROM Parceiros");
-
-                // Verificar se os campos Email e Telefone existem
-                await EnsureEmailAndTelefoneColumnsExist();
-            }
-            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Message.Contains("Invalid object name 'Parceiros'"))
-            {
-                // Tabela não existe, criar agora
-                await _context.Database.ExecuteSqlRawAsync(@"
-                    CREATE TABLE [dbo].[Parceiros] (
-                        [Id] int IDENTITY(1,1) NOT NULL,
-                        [PessoaFisicaId] int NOT NULL,
-                        [FilialId] int NOT NULL,
-                        [OAB] nvarchar(20) NULL,
-                        [Email] nvarchar(100) NULL,
-                        [Telefone] nvarchar(20) NULL,
-                        [DataCadastro] datetime2 NOT NULL,
-                        [DataAtualizacao] datetime2 NULL,
-                        [Ativo] bit NOT NULL,
-                        CONSTRAINT [PK_Parceiros] PRIMARY KEY ([Id])
-                    );
-
-                    CREATE INDEX [IX_Parceiros_FilialId] ON [dbo].[Parceiros] ([FilialId]);
-                    CREATE UNIQUE INDEX [IX_Parceiros_PessoaFisicaId] ON [dbo].[Parceiros] ([PessoaFisicaId]);
-
-                    ALTER TABLE [dbo].[Parceiros] ADD CONSTRAINT [FK_Parceiros_Filiais_FilialId]
-                        FOREIGN KEY ([FilialId]) REFERENCES [dbo].[Filiais] ([Id]);
-                    ALTER TABLE [dbo].[Parceiros] ADD CONSTRAINT [FK_Parceiros_PessoasFisicas_PessoaFisicaId]
-                        FOREIGN KEY ([PessoaFisicaId]) REFERENCES [dbo].[PessoasFisicas] ([Id]);
-                ");
-
-                Console.WriteLine("Tabela Parceiros criada com sucesso!");
-            }
-
-            // Sempre verificar se as colunas Email e Telefone existem
-            await EnsureEmailAndTelefoneColumnsExist();
+            await CreateTableHelper.CreateParceirosTableIfNotExists(_context);
         }
 
         private async Task EnsureEmailAndTelefoneColumnsExist()
@@ -353,42 +315,13 @@ namespace CrmArrighi.Controllers
             {
                 Console.WriteLine("Verificando e adicionando campos Email e Telefone à tabela Parceiros...");
 
-                // Tentar adicionar as colunas diretamente - se já existirem, o SQL Server retornará erro que podemos ignorar
-                try
-                {
-                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE [Parceiros] ADD [Email] NVARCHAR(100) NULL");
-                    Console.WriteLine("✅ Campo Email adicionado à tabela Parceiros");
-                }
-                catch (Exception emailEx)
-                {
-                    if (emailEx.Message.Contains("already exists") || emailEx.Message.Contains("duplicate") || emailEx.Message.Contains("Column names in each table must be unique"))
-                    {
-                        Console.WriteLine("ℹ️  Campo Email já existe na tabela Parceiros");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"❌ Erro ao adicionar campo Email: {emailEx.Message}");
-                        throw;
-                    }
-                }
+                await _context.Database.ExecuteSqlRawAsync(@"
+                    ALTER TABLE ""Parceiros""
+                        ADD COLUMN IF NOT EXISTS ""Email"" character varying(100) NULL;
 
-                try
-                {
-                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE [Parceiros] ADD [Telefone] NVARCHAR(20) NULL");
-                    Console.WriteLine("✅ Campo Telefone adicionado à tabela Parceiros");
-                }
-                catch (Exception telefoneEx)
-                {
-                    if (telefoneEx.Message.Contains("already exists") || telefoneEx.Message.Contains("duplicate") || telefoneEx.Message.Contains("Column names in each table must be unique"))
-                    {
-                        Console.WriteLine("ℹ️  Campo Telefone já existe na tabela Parceiros");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"❌ Erro ao adicionar campo Telefone: {telefoneEx.Message}");
-                        throw;
-                    }
-                }
+                    ALTER TABLE ""Parceiros""
+                        ADD COLUMN IF NOT EXISTS ""Telefone"" character varying(20) NULL;
+                ");
 
                 Console.WriteLine("✅ Verificação dos campos Email e Telefone concluída");
             }

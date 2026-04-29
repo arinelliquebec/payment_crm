@@ -4,6 +4,6 @@
   "installCommand": "pnpm install --no-frozen-lockfile",
   "framework": "nextjs",
   "env": {
-    "NEXT_PUBLIC_API_URL": "https://arrighi-bk-bzfmgxavaxbyh5ej.brazilsouth-01.azurewebsites.net/api"
+    "NEXT_PUBLIC_API_URL": "https://trick-bk-bbd2hnccdccvbmg3.brazilsouth-01.azurewebsites.net/api"
   }
 }

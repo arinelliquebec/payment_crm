@@ -17,7 +17,7 @@ fi
 
 # Fazer build de produção
 echo "🏗️ Fazendo build de produção..."
-NODE_ENV=production NEXT_PUBLIC_API_URL="https://arrighi-bk-bzfmgxavaxbyh5ej.brazilsouth-01.azurewebsites.net/api" pnpm run build
+NODE_ENV=production NEXT_PUBLIC_API_URL="https://trick-bk-bbd2hnccdccvbmg3.brazilsouth-01.azurewebsites.net/api" pnpm run build
 
 # Verificar se o build foi bem-sucedido
 if [ $? -eq 0 ]; then

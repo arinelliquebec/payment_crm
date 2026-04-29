@@ -12,7 +12,7 @@ Sistema CRM desenvolvido em C# com .NET 8, utilizando ASP.NET Core Web API e Ent
 - **SQL Server / Azure SQL Database**
 - **CORS habilitado para frontend**
 
-### Estrutura do Projeto
+### Estrutura do Projeto!
 ```
 CadastroPessoas/
 ├── Controllers/          # Controllers da API
