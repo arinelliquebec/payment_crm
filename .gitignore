@@ -13,6 +13,8 @@ desktop.ini
 *.user
 *.userosscache
 *.sln.docstates
+*.DotSettings.user
+*.userprefs
 
 # Logs
 *.log
@@ -32,6 +34,8 @@ backend/.env
 backend/.env.*
 frontend/.env
 frontend/.env.*
+bff/.env
+bff/.env.*
 backend/appsettings.Development.json
 backend/appsettings.Local.json
 backend/appsettings.Production.json
@@ -43,12 +47,18 @@ backend/secrets.json
 *.key
 *.crt
 
-# Node / pnpm / frontend
+# Sentry CLI (credenciais / auth token)
+.sentryclirc
+sentry.properties
+
+# Node / pnpm
 node_modules/
 **/node_modules/
 .pnpm-store/
 .npm/
 .yarn/
+
+# Frontend (Next.js)
 frontend/.next/
 frontend/out/
 frontend/dist/
@@ -58,16 +68,23 @@ frontend/.vercel/
 frontend/coverage/
 frontend/.nyc_output/
 
-# Next.js / cache
+# BFF (NestJS)
+bff/dist/
+bff/coverage/
+bff/.turbo/
+
+# Next.js / caches (qualquer pacote na raiz)
 .next/
 out/
 .turbo/
 .vercel/
+**/.eslintcache
+**/.cache/
 
 # TypeScript
 *.tsbuildinfo
 
-# .NET / backend
+# .NET / backend (artefatos de build ficam em bin/obj; não ignorar *.dll no repo inteiro)
 **/bin/
 **/obj/
 backend/TestResults/
@@ -75,12 +92,18 @@ backend/coverage/
 backend/coveragereport/
 backend/publish/
 backend/artifacts/
+BenchmarkDotNet.Artifacts/
 *.nupkg
 *.snupkg
-*.dll
-*.exe
-*.pdb
-*.cache
+
+# Testes / E2E
+**/test-results/
+**/playwright-report/
+**/blob-report/
+**/playwright/.cache/
+
+# Cobertura (raiz ou pacotes)
+coverage/
 
 # Entity Framework / banco / dumps
 *.db
@@ -103,3 +126,11 @@ temp/
 *.swp
 *.swo
 *~
+*.orig
+
+#AI
+.cursor/mcp.json
+.mcp.json
+.env
+.env.*
+!.env.example

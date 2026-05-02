@@ -10,6 +10,7 @@ import ConditionalRouteGuard from "@/components/ConditionalRouteGuard";
 import { Analytics } from "@vercel/analytics/next";
 import { Toaster } from "sonner";
 import ThemeRegistry from "@/components/ThemeRegistry";
+import { ErrorBoundary } from "@/shared/components/feedback/ErrorBoundary";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -55,22 +56,24 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${plusJakartaSans.variable} h-full antialiased`}
       >
-        <QueryProvider>
-          <AuthProvider>
-            <NotificationProvider>
-              <AtividadeProvider>
-                <FormProvider>
-                  <ConditionalRouteGuard>
-                    <ThemeRegistry>
-                      <Analytics />
-                      {children}
-                    </ThemeRegistry>
-                  </ConditionalRouteGuard>
-                </FormProvider>
-              </AtividadeProvider>
-            </NotificationProvider>
-          </AuthProvider>
-        </QueryProvider>
+        <ErrorBoundary>
+          <QueryProvider>
+            <AuthProvider>
+              <NotificationProvider>
+                <AtividadeProvider>
+                  <FormProvider>
+                    <ConditionalRouteGuard>
+                      <ThemeRegistry>
+                        <Analytics />
+                        {children}
+                      </ThemeRegistry>
+                    </ConditionalRouteGuard>
+                  </FormProvider>
+                </AtividadeProvider>
+              </NotificationProvider>
+            </AuthProvider>
+          </QueryProvider>
+        </ErrorBoundary>
         <Toaster position="top-right" richColors closeButton />
       </body>
     </html>

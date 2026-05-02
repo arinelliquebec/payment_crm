@@ -236,12 +236,20 @@ namespace CrmArrighi.Controllers
                 return BadRequest("Tipo de pessoa deve ser 'Fisica' ou 'Juridica'.");
             }
 
-            // Criar o usuário
+            // Garantir que a senha seja hasheada apenas se não for já um hash BCrypt
+            // (ex: reutilização de senha de usuário existente que já foi migrada)
+            string senhaArmazenar = senhaFinal;
+            if (!string.IsNullOrWhiteSpace(senhaFinal) && !senhaFinal.StartsWith("$2"))
+            {
+                senhaArmazenar = BCrypt.Net.BCrypt.HashPassword(senhaFinal);
+            }
+
+            // Criar o usuário (senha sempre hasheada com BCrypt)
             var usuario = new Usuario
             {
                 Login = createDto.Login,
                 Email = createDto.Email,
-                Senha = senhaFinal,
+                Senha = senhaArmazenar,
                 GrupoAcessoId = grupoAcessoId,
                 TipoPessoa = createDto.TipoPessoa,
                 PessoaFisicaId = createDto.PessoaFisicaId,
@@ -378,6 +386,12 @@ namespace CrmArrighi.Controllers
                 }
             }
 
+            // Hash da senha antes de salvar
+            if (!string.IsNullOrWhiteSpace(usuario.Senha) && !usuario.Senha.StartsWith("$2"))
+            {
+                usuario.Senha = BCrypt.Net.BCrypt.HashPassword(usuario.Senha);
+            }
+
             // Definir campos de auditoria
             usuario.DataCadastro = DateTime.UtcNow;
             usuario.Ativo = true;
@@ -452,7 +466,7 @@ namespace CrmArrighi.Controllers
 
             if (!string.IsNullOrWhiteSpace(updateDto.Senha))
             {
-                usuario.Senha = updateDto.Senha;
+                usuario.Senha = BCrypt.Net.BCrypt.HashPassword(updateDto.Senha);
             }
 
             // Verificar se o grupo de acesso existe (se fornecido)

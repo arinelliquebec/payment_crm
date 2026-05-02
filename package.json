@@ -4,6 +4,10 @@
   "private": true,
   "description": "Monorepo do CRM Arrighi",
   "packageManager": "pnpm@10.12.1",
+  "engines": {
+    "node": ">=24.11.1",
+    "pnpm": ">=10.12.1"
+  },
   "scripts": {
     "dev:frontend": "pnpm --filter arr dev",
     "build:frontend": "pnpm --filter arr build",

@@ -3,8 +3,8 @@
 import React, { useMemo, useState, useCallback, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import MainLayout from "@/components/MainLayout";
-import { mutate } from "swr";
-import { SWR_CACHE_KEY } from "@/app/gestao/notas-fiscais/page";
+import { useQueryClient } from "@tanstack/react-query";
+import { NFSE_HISTORICO_QUERY_KEY } from "@/app/gestao/notas-fiscais/page";
 import {
   FileCheck,
   Send,
@@ -322,6 +322,7 @@ const formatCpfCnpj = (value: string): string => {
 // COMPONENTE PRINCIPAL
 // ========================================
 export default function EmissaoNotaFiscalPage() {
+  const queryClient = useQueryClient();
   const [formData, setFormData] = useState<NfseFormData>(getInitialState());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [response, setResponse] = useState<ApiResponse | null>(null);
@@ -773,7 +774,9 @@ export default function EmissaoNotaFiscalPage() {
       const json = await res.json();
 
       if (res.ok) {
-        await mutate(SWR_CACHE_KEY());
+        await queryClient.invalidateQueries({
+          queryKey: NFSE_HISTORICO_QUERY_KEY(),
+        });
         const codigo = json.codigo || json.status || 200;
         setResponse({ success: true, data: json, message: getMensagemPorCodigo(codigo, true) });
         setTimeout(() => setCanDownload(true), 2000);

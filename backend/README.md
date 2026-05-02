@@ -225,7 +225,7 @@ dotnet ef migrations remove
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Server=frademasql.database.windows.net;Database=frademabr;User Id=frademasql;Password=akiko!@#777bBhoho123;TrustServerCertificate=true;MultipleActiveResultSets=true"
+    "DefaultConnection": "Server=SEU_SERVIDOR;Database=SEU_BANCO;User Id=SEU_USUARIO;Password=SUA_SENHA;TrustServerCertificate=true;MultipleActiveResultSets=true"
   }
 }
 ```

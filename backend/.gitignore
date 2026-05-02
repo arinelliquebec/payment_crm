@@ -6,12 +6,15 @@ artifacts/
 TestResults/
 coverage/
 coveragereport/
+BenchmarkDotNet.Artifacts/
 
 # User-specific IDE files
 *.user
 *.suo
 *.userosscache
 *.sln.docstates
+*.DotSettings.user
+*.userprefs
 .vs/
 .vscode/*
 !.vscode/extensions.json

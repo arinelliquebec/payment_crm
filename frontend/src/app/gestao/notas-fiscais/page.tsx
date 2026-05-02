@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import useSWR, { mutate } from "swr";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FileText,
   Search,
@@ -55,10 +55,16 @@ interface FetchHistoricoParams {
   dataFim?: string;
 }
 
-// ─── Chave de cache SWR ───────────────────────────────────────────────────────
-// Exportada para que a página de emissão possa chamar mutate() e invalidar o cache.
-export const SWR_CACHE_KEY = (cnpj?: string) =>
-  cnpj ? `nfse-historico-${cnpj.replace(/\D/g, "")}` : "nfse-historico-all";
+// ─── Query key React Query ────────────────────────────────────────────────────
+// Exportada para que a página de emissão invalide o cache via queryClient.
+// Prefix matching: chamar com () invalida todas as variações por filtro de data.
+export const NFSE_HISTORICO_QUERY_KEY = (filters?: {
+  dataInicio?: string;
+  dataFim?: string;
+}) =>
+  filters
+    ? (["nfse-historico", filters.dataInicio ?? "", filters.dataFim ?? ""] as const)
+    : (["nfse-historico"] as const);
 
 /** Extrai UF do tomador a partir de possíveis formatos do payload do histórico NFS-e */
 function mapTomadorUf(n: Record<string, unknown>): string | undefined {
@@ -224,17 +230,19 @@ export default function NotasFiscaisPage() {
 
   const [filialErros, setFilialErros] = useState<string[]>([]);
 
-  // ── SWR ─────────────────────────────────────────────────────────────────────
+  // ── React Query ─────────────────────────────────────────────────────────────
   // Busca todas as notas de AMBAS as filiais e une os resultados.
-  const swrKey = `${SWR_CACHE_KEY()}-${dataInicio}-${dataFim}`;
+  const queryClient = useQueryClient();
+  const queryKey = NFSE_HISTORICO_QUERY_KEY({ dataInicio, dataFim });
+  const invalidateHistorico = () => queryClient.invalidateQueries({ queryKey });
 
   const {
     data: todasNotas = [],
     isLoading,
     error,
-  } = useSWR<NotaFiscal[]>(
-    swrKey,
-    async () => {
+  } = useQuery<NotaFiscal[], Error>({
+    queryKey,
+    queryFn: async () => {
       const [resultSP, resultRJ] = await Promise.allSettled([
         fetchHistorico({ cnpj: FILIAIS_CNPJ.SP, dataInicio, dataFim }),
         fetchHistorico({ cnpj: FILIAIS_CNPJ.RJ, dataInicio, dataFim }),
@@ -271,12 +279,10 @@ export default function NotasFiscaisPage() {
 
       return combined;
     },
-    {
-      revalidateOnFocus: false,
-      revalidateOnReconnect: false,
-      dedupingInterval: 5_000,
-    },
-  );
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 5_000,
+  });
 
   const cancelNota = useMemo(
     () => todasNotas.find((n) => n.id === cancelNotaId) ?? null,
@@ -442,7 +448,7 @@ export default function NotasFiscaisPage() {
       }
 
       toast.success("NFS-e cancelada e apagada com sucesso!");
-      await mutate(swrKey);
+      await invalidateHistorico();
       handleCloseDeleteModal();
     } catch (e: any) {
       setDeleteError(e.message || "Erro de conexão ao apagar.");
@@ -498,7 +504,7 @@ export default function NotasFiscaisPage() {
       }
 
       toast.success("NFS-e cancelada com sucesso!");
-      await mutate(swrKey);
+      await invalidateHistorico();
       handleCloseCancelModal();
     } catch (e: any) {
       setCancelError(e.message || "Erro de conexão ao cancelar.");
@@ -660,7 +666,7 @@ export default function NotasFiscaisPage() {
               </span>
               <button
                 type="button"
-                onClick={() => mutate(swrKey)}
+                onClick={() => invalidateHistorico()}
                 className="ml-auto text-xs font-semibold underline hover:text-amber-300"
               >
                 Tentar novamente
@@ -685,7 +691,7 @@ export default function NotasFiscaisPage() {
               </p>
               <button
                 type="button"
-                onClick={() => mutate(swrKey)}
+                onClick={() => invalidateHistorico()}
                 className="mt-4 px-5 py-2 bg-neutral-800 text-amber-400 rounded-xl text-sm font-semibold hover:bg-neutral-700 transition-all"
               >
                 Tentar novamente

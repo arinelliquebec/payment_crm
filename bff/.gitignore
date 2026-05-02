@@ -1,23 +1,47 @@
 # Dependências
 node_modules/
+.pnpm-store/
+.npm/
+.yarn/
 
-# Build
+# Build / NestJS
 dist/
+build/
+
+# Testes e cobertura
+coverage/
+test-results/
+
+# Cache
+.turbo/
+.cache/
+*.tsbuildinfo
+.eslintcache
 
 # Ambiente
 .env
-.env.local
-.env.production
+.env.*
+!.env.example
+!.env.*.example
+
+# Sentry
+.sentryclirc
+sentry.properties
 
 # Logs
 *.log
 npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# IDE
+# IDE / OS (mantidos para clone direto só do pacote)
 .vscode/
 .idea/
 *.suo
 *.ntvs*
 *.njsproj
-*.sln
 *.sw?
+
+.DS_Store
+Thumbs.db

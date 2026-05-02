@@ -52,8 +52,20 @@ namespace CrmArrighi.Controllers
                     return BadRequest("Login ou senha incorretos");
                 }
 
-                // Verificar senha (em produção, usar hash)
-                if (usuario.Senha != loginDTO.Senha)
+                // Verificar senha com BCrypt (novo padrão) ou texto plano (legado - migração automática)
+                bool senhaValida = false;
+                if (BCrypt.Net.BCrypt.Verify(loginDTO.Senha, usuario.Senha))
+                {
+                    senhaValida = true;
+                }
+                else if (usuario.Senha == loginDTO.Senha)
+                {
+                    // Senha em texto plano (legado) - migrar para hash automaticamente
+                    senhaValida = true;
+                    usuario.Senha = BCrypt.Net.BCrypt.HashPassword(loginDTO.Senha);
+                }
+
+                if (!senhaValida)
                 {
                     var nomeUsuarioFalha = usuario.PessoaFisica?.Nome ?? usuario.Login;
                     await _auditService.LogAsync(usuario.Id, "Login", "Usuario", usuario.Id,

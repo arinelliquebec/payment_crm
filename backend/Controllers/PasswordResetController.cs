@@ -170,8 +170,8 @@ namespace CrmArrighi.Controllers
                     return BadRequest(new { message = "Este link de reset expirou. Solicite um novo" });
                 }
 
-                // Atualizar senha do usuário
-                passwordReset.Usuario.Senha = resetDTO.NovaSenha;
+                // Atualizar senha do usuário (sempre hasheada com BCrypt)
+                passwordReset.Usuario.Senha = BCrypt.Net.BCrypt.HashPassword(resetDTO.NovaSenha);
                 passwordReset.Utilizado = true;
                 passwordReset.DataUtilizacao = DateTime.UtcNow;
 

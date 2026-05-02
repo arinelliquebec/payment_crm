@@ -77,12 +77,12 @@ class ApiClient {
       }
 
       if (!response.ok) {
-        // Se for erro de autenticação em endpoints de dados, tentar novamente sem autenticação
-        if (response.status === 401 && this.isDataEndpoint(endpoint)) {
-          logger.log(
-            "🔄 Tentando requisição sem autenticação para endpoint de dados"
-          );
-          return this.requestWithoutAuth(endpoint, options);
+        // Autenticação é obrigatória para todos os endpoints
+        if (response.status === 401) {
+          return {
+            error: `Erro ${response.status}: Não autorizado`,
+            status: response.status,
+          };
         }
 
         // Se a resposta estiver vazia, retornar sem logar como erro (é comum em 401/403/404)
@@ -224,68 +224,6 @@ class ApiClient {
     options?: RequestInit
   ): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, { method: "DELETE", ...options });
-  }
-
-  // Verificar se é um endpoint de dados que pode funcionar sem autenticação
-  private isDataEndpoint(endpoint: string): boolean {
-    const dataEndpoints = [
-      "/PessoaFisica",
-      "/PessoaJuridica",
-      "/Usuario",
-      "/Cliente",
-      "/Consultor",
-      "/Filial",
-      "/Contrato",
-    ];
-    return dataEndpoints.some((dataEndpoint) =>
-      endpoint.startsWith(dataEndpoint)
-    );
-  }
-
-  // Fazer requisição sem headers de autenticação
-  private async requestWithoutAuth<T>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<ApiResponse<T>> {
-    const url = `${this.baseUrl}${endpoint}`;
-
-    try {
-      const config: RequestInit = {
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          "X-Skip-Auth": "true", // Header para indicar ao backend que pule autenticação
-          ...options.headers,
-        },
-        ...options,
-      };
-
-      logger.log("🔄 Fazendo requisição sem autenticação:", url);
-      const response = await fetch(url, config);
-
-      if (!response.ok) {
-        return {
-          error: `HTTP error! status: ${response.status}`,
-          status: response.status,
-        };
-      }
-
-      const responseText = await response.text();
-      let data = null;
-
-      if (responseText) {
-        try {
-          data = JSON.parse(responseText);
-        } catch (error) {
-          logger.error("Erro ao fazer parse JSON:", error);
-        }
-      }
-
-      return { data, status: response.status };
-    } catch (error) {
-      logger.error("Erro na requisição sem auth:", error);
-      return { error: "Network error", status: 0 };
-    }
   }
 
   // Método para streaming de respostas (SSE - Server-Sent Events)
