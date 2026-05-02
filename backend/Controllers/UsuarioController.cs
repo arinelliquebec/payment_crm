@@ -725,12 +725,9 @@ namespace CrmArrighi.Controllers
         {
             try
             {
-                // Usar SQL direto para teste
-                var sql = "UPDATE Usuarios SET FilialId = @filialId, DataAtualizacao = @dataAtualizacao WHERE Id = @id";
-                var rowsAffected = await _context.Database.ExecuteSqlRawAsync(sql,
-                    new Microsoft.Data.SqlClient.SqlParameter("@filialId", filialId ?? (object)DBNull.Value),
-                    new Microsoft.Data.SqlClient.SqlParameter("@dataAtualizacao", DateTime.UtcNow),
-                    new Microsoft.Data.SqlClient.SqlParameter("@id", id));
+                var dataAtualizacao = DateTime.UtcNow;
+                var rowsAffected = await _context.Database.ExecuteSqlInterpolatedAsync(
+                    $"UPDATE \"Usuarios\" SET \"FilialId\" = {filialId}, \"DataAtualizacao\" = {dataAtualizacao} WHERE \"Id\" = {id}");
 
                 if (rowsAffected == 0)
                 {

@@ -3,8 +3,8 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace CrmArrighi.Models
 {
-    [Table("ColaboradoresFradema")]
-    public class ColaboradorFradema
+    [Table("Funcionarios")]
+    public class Funcionario
     {
         public int Id { get; set; }
 
@@ -35,6 +35,6 @@ namespace CrmArrighi.Models
 
         // Navigation property
         [ForeignKey("PessoaFisicaId")]
-        public PessoaFisicaFradema? PessoaFisica { get; set; }
+        public PessoaFuncionario? PessoaFisica { get; set; }
     }
 }

@@ -14,12 +14,13 @@ Sistema completo de monitoramento de saúde da aplicação.
 
 ## Verificações Implementadas
 
-### 1. SQL Server (`sql_server`)
+### 1. PostgreSQL (`postgresql`)
 - ✅ Conectividade com banco de dados
 - ✅ Tempo de resposta
 - ✅ Versão do servidor
-- ✅ Tamanho do banco
-- ✅ Conexões ativas
+- ✅ Database atual
+- ✅ Verificação de tabela principal (`Usuarios`)
+- ✅ Contagem de usuários
 
 **Tags:** `critical`, `database`
 
@@ -60,16 +61,16 @@ https://seu-dominio.com/health/dashboard
   "duration": "245ms",
   "checks": [
     {
-      "name": "sql_server",
+      "name": "postgresql",
       "status": "Healthy",
-      "description": "SQL Server operacional",
+      "description": "PostgreSQL operacional",
       "duration": "45ms",
       "data": {
         "ConnectionTimeMs": 45,
-        "ServerVersion": "Microsoft SQL Server 2022",
-        "DatabaseName": "CrmArrighi",
-        "DatabaseSizeMB": 256,
-        "ActiveConnections": 5
+        "ServerVersion": "PostgreSQL 16",
+        "DatabaseName": "payment_crm_demo",
+        "MainTableExists": true,
+        "UserCount": 5
       }
     },
     {
@@ -168,8 +169,8 @@ builder.Services.AddHealthChecks()
 
 ## Troubleshooting
 
-### SQL Server Unhealthy
-- Verificar connection string
+### PostgreSQL Unhealthy
+- Verificar connection string (`ConnectionStrings__DefaultConnection` ou `PGHOST`/`PGUSER`/`PGPASSWORD`/`PGDATABASE`)
 - Verificar firewall/rede
 - Verificar credenciais
 

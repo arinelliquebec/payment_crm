@@ -1,16 +1,15 @@
 namespace CrmArrighi.DTOs
 {
     /// <summary>
-    /// DTO para listagem de colaboradores (PessoaFisicaFradema + ColaboradorFradema).
-    /// Formato compatível com o frontend frappyou.
+    /// DTO para listagem de funcionários (PessoaFuncionario + Funcionario).
     /// </summary>
-    public class ColaboradorFrademaListDTO
+    public class FuncionarioListDTO
     {
         // Identificadores
-        public string Id { get; set; } = string.Empty;          // "pf-{PessoaFisicaId}"
-        public int ColaboradorId { get; set; }                    // PessoaFisicaFradema.Id
+        public string Id { get; set; } = string.Empty;          // "pf-{PessoaFuncionarioId}"
+        public int FuncionarioId { get; set; }                  // PessoaFuncionario.Id
 
-        // Dados pessoais (de PessoasFisicasFradema)
+        // Dados pessoais (de PessoasFuncionarios)
         public string Name { get; set; } = string.Empty;
         public string Nome { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
@@ -28,7 +27,7 @@ namespace CrmArrighi.DTOs
         public string? DataNascimento { get; set; }              // "yyyy-MM-dd"
         public string? BirthDate { get; set; }                   // alias
 
-        // Dados de vínculo (de ColaboradoresFradema)
+        // Dados de vínculo (de Funcionarios)
         public string? Cargo { get; set; }
         public string? Position { get; set; }                    // alias de Cargo
         public string? Empresa { get; set; }
@@ -41,28 +40,28 @@ namespace CrmArrighi.DTOs
         // Sistema
         public bool HasSystemUser { get; set; }
         public string? SystemUserId { get; set; }
-        public string Role { get; set; } = "colaborador";
+        public string Role { get; set; } = "funcionario";
         public DateTime? CreatedAt { get; set; }
     }
 
     /// <summary>
-    /// DTO para estatísticas de colaboradores.
+    /// DTO para estatísticas de funcionários.
     /// </summary>
-    public class ColaboradorFrademaStatsDTO
+    public class FuncionarioStatsDTO
     {
         public long TotalPessoas { get; set; }
-        public long TotalColaboradores { get; set; }
-        public long ColaboradoresAtivos { get; set; }
+        public long TotalFuncionarios { get; set; }
+        public long FuncionariosAtivos { get; set; }
         public long TotalSystemUsers { get; set; }
         public long TotalAdmins { get; set; }
     }
 
     /// <summary>
-    /// DTO para atualização parcial de colaborador.
+    /// DTO para atualização parcial de funcionário.
     /// </summary>
-    public class UpdateColaboradorFrademaDTO
+    public class UpdateFuncionarioDTO
     {
-        // Campos de PessoaFisicaFradema
+        // Campos de PessoaFuncionario
         public string? Nome { get; set; }
         public string? EmailEmpresarial { get; set; }
         public string? EmailPessoal { get; set; }
@@ -76,7 +75,7 @@ namespace CrmArrighi.DTOs
         public string? Telefone1 { get; set; }
         public string? Telefone2 { get; set; }
 
-        // Campos de ColaboradorFradema
+        // Campos de Funcionario
         public string? Cargo { get; set; }
         public string? Empresa { get; set; }
         public string? Filial { get; set; }
@@ -84,12 +83,12 @@ namespace CrmArrighi.DTOs
     }
 
     /// <summary>
-    /// Resposta paginada de colaboradores (compatível com frontend frappyou).
+    /// Resposta paginada de funcionários.
     /// </summary>
-    public class ColaboradorFrademaPagedResponse
+    public class FuncionarioPagedResponse
     {
         public bool Success { get; set; } = true;
-        public List<ColaboradorFrademaListDTO> Users { get; set; } = new();
+        public List<FuncionarioListDTO> Users { get; set; } = new();
         public PaginationInfo Pagination { get; set; } = new();
     }
 
