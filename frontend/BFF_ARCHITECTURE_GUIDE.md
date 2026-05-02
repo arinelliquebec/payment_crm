@@ -1,5 +1,12 @@
 # Arquitetura BFF com NestJS + Nx para CRM Arrighi
 
+> ⚠️ **DEPRECATED.** This document describes the legacy NestJS BFF architecture. The project is migrating to a Next.js server-side orchestration layer plus a thin Go API gateway. See:
+> - `docs/adr/0001-bff-deprecation.md` — decision and rationale
+> - `docs/architecture/target-architecture.md` — target topology and request flows
+> - `frontend/src/server/README.md` — Next.js server-side conventions
+>
+> Kept for historical context only. Do not extend.
+
 ## Visão Geral da Nova Arquitetura
 
 ```

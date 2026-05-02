@@ -1,0 +1,23 @@
+# Build artifacts
+/bin/
+/gateway
+*.exe
+*.test
+*.out
+
+# Coverage / profiling
+coverage.out
+*.prof
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.DS_Store
+Thumbs.db

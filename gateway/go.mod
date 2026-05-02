@@ -1,0 +1,5 @@
+module github.com/payment-crm/gateway
+
+go 1.25.0
+
+require golang.org/x/time v0.15.0

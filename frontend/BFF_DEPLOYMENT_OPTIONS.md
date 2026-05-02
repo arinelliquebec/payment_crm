@@ -1,5 +1,7 @@
 # Opções de Deploy: Next.js + NestJS BFF
 
+> ⚠️ **DEPRECATED.** Deployment options for the legacy NestJS BFF. The project is migrating away from `bff/`. See `docs/adr/0001-bff-deprecation.md` and `docs/architecture/target-architecture.md`. Kept for historical context only.
+
 ## ✅ Arquitetura Correta
 
 ```
