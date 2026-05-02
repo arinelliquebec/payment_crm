@@ -725,14 +725,8 @@ namespace CrmArrighi.Controllers
         {
             try
             {
-                // Usar SQL direto para teste
-                var sql = "UPDATE Usuarios SET FilialId = @filialId, DataAtualizacao = @dataAtualizacao WHERE Id = @id";
-                var rowsAffected = await _context.Database.ExecuteSqlRawAsync(sql,
-                    new Microsoft.Data.SqlClient.SqlParameter("@filialId", filialId ?? (object)DBNull.Value),
-                    new Microsoft.Data.SqlClient.SqlParameter("@dataAtualizacao", DateTime.UtcNow),
-                    new Microsoft.Data.SqlClient.SqlParameter("@id", id));
-
-                if (rowsAffected == 0)
+                var usuario = await _context.Usuarios.FindAsync(id);
+                if (usuario == null)
                 {
                     return NotFound(new {
                         recurso = "Usuario",
@@ -741,7 +735,11 @@ namespace CrmArrighi.Controllers
                     });
                 }
 
-                return Ok($"Usuário {id} atualizado com FilialId: {filialId}. Linhas afetadas: {rowsAffected}");
+                usuario.FilialId = filialId;
+                usuario.DataAtualizacao = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return Ok($"Usuário {id} atualizado com FilialId: {filialId}.");
             }
             catch (Exception ex)
             {
