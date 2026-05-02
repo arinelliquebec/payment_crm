@@ -43,9 +43,9 @@ namespace CrmArrighi.Data
         // Documentos do Portal
         public DbSet<DocumentoPortal> DocumentosPortal { get; set; }
 
-        // FrappYOU - Colaboradores
-        public DbSet<PessoaFisicaFradema> PessoasFisicasFradema { get; set; }
-        public DbSet<ColaboradorFradema> ColaboradoresFradema { get; set; }
+        // Funcionários
+        public DbSet<PessoaFuncionario> PessoasFuncionarios { get; set; }
+        public DbSet<Funcionario> Funcionarios { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -401,16 +401,14 @@ namespace CrmArrighi.Data
                 .HasForeignKey(d => d.ClienteId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // ── FrappYOU: PessoasFisicasFradema + ColaboradoresFradema ──────
-            // Tabelas já existem no banco — apenas mapear, sem gerar migrations
+            // ── Funcionários ────────────────────────────────────────────
+            modelBuilder.Entity<PessoaFuncionario>()
+                .ToTable("PessoasFuncionarios");
 
-            modelBuilder.Entity<PessoaFisicaFradema>()
-                .ToTable("PessoasFisicasFradema");
+            modelBuilder.Entity<Funcionario>()
+                .ToTable("Funcionarios");
 
-            modelBuilder.Entity<ColaboradorFradema>()
-                .ToTable("ColaboradoresFradema");
-
-            modelBuilder.Entity<ColaboradorFradema>()
+            modelBuilder.Entity<Funcionario>()
                 .HasOne(c => c.PessoaFisica)
                 .WithMany()
                 .HasForeignKey(c => c.PessoaFisicaId)
