@@ -1,8 +1,5 @@
 // Configuração de ambiente para o frontend
 export const config = {
-  // URL do BFF NestJS
-  bffUrl: process.env.NEXT_PUBLIC_BFF_URL || "http://localhost:3001",
-
   // Ambiente atual
   environment: process.env.NEXT_PUBLIC_ENVIRONMENT || "development",
 
@@ -17,21 +14,17 @@ export const config = {
   requestTimeout: 30000,
 };
 
-// Retorna a URL base do BFF NestJS
-export const getBffUrl = (): string => {
-  // Em produção na Vercel, usa o rewrite /bff → BFF externo
-  if (process.env.NEXT_PUBLIC_BFF_URL) {
-    return process.env.NEXT_PUBLIC_BFF_URL;
-  }
-
-  // Fallback local de desenvolvimento
-  return "http://localhost:3001";
-};
-
-// Mantida para compatibilidade com código legado (redireciona ao BFF)
+// Browser: proxy same-origin `/api/backend/*` → .NET (cookie `bff_session`).
+// Servidor Node (import sem `window`): URL direta do backend para módulos server-only.
 export const getApiUrl = (): string => {
-  const bff = getBffUrl();
-  return `${bff}/api`;
+  if (typeof window !== "undefined") {
+    return "/api/backend";
+  }
+  return (
+    process.env.BACKEND_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    "http://localhost:5101/api"
+  );
 };
 
 // Função para verificar se está em desenvolvimento

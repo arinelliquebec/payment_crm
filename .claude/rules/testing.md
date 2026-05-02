@@ -4,8 +4,8 @@ paths:
   - "**/*.spec.*"
   - "**/tests/**/*"
   - "frontend/**/*.{ts,tsx}"
-  - "bff/**/*.{ts,js}"
   - "backend/**/*.{cs,go}"
+  - "gateway/**/*.go"
   - "test-menu-navigation.sh"
 ---
 
@@ -29,10 +29,10 @@ Frontend:
 - test forms and validation
 - avoid brittle snapshot-heavy tests
 
-BFF:
-- test services, controllers, guards, filters, and backend clients
-
 Backend:
 - test domain invariants
 - test application use cases
 - test critical API behavior
+
+Gateway:
+- test middleware and proxy wiring where non-trivial

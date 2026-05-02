@@ -12,14 +12,7 @@
     "dev:frontend": "pnpm --filter arr dev",
     "build:frontend": "pnpm --filter arr build",
     "dev:backend": "cd backend && dotnet run",
-    "build:backend": "cd backend && dotnet build",
-    "dev:bff": "pnpm --filter @arrighi/bff start:dev",
-    "build:bff": "pnpm --filter @arrighi/bff build",
-    "start:bff": "pnpm --filter @arrighi/bff start"
+    "build:backend": "cd backend && dotnet build"
   },
-  "workspaces": [
-    "frontend",
-    "backend",
-    "bff"
-  ]
+  "workspaces": ["frontend", "backend"]
 }

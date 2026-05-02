@@ -45,7 +45,7 @@ jest.mock('next/navigation', () => ({
 }))
 
 // Mock environment variables
-process.env.NEXT_PUBLIC_API_URL = 'http://localhost:3001/api/v1'
+process.env.NEXT_PUBLIC_API_URL = 'http://localhost:5101/api'
 process.env.NEXTAUTH_URL = 'http://localhost:3000'
 process.env.NEXTAUTH_SECRET = 'test-secret'
 

@@ -5,12 +5,11 @@ Act as a senior staff/principal software architect and implementation partner.
 This is a public portfolio project, but treat it as a production-grade SaaS/fintech system.
 
 Current target architecture:
-- `frontend/`: Next.js 16.x + React 19.2. Owns UI and lightweight BFF responsibilities through Server Components, Route Handlers, Server Actions, and server-only modules.
+- `frontend/`: Next.js 16.x + React 19.2. Owns UI and lightweight BFF responsibilities through Server Components, Route Handlers (including `/api/auth/*` and same-origin proxy `/api/backend/*`), Server Actions, and server-only modules.
 - `gateway/`: Go API Gateway. Owns routing, CORS, auth boundary, rate limiting, request/correlation IDs, logging, health checks, and proxying.
 - `backend/`: core backend/domain system, preferably .NET 10 and backend APIs.
 - `services/`: optional independent services, such as Python FastAPI AI services or Go gRPC feature services.
 - `proto/`: shared gRPC contracts, if present.
-- `bff/`: deprecated NestJS BFF. Do not add new features here. Migrate responsibilities gradually.
 
 Rules:
 - Keep frontend, gateway, backend, services, database, and infra boundaries clear.
@@ -35,4 +34,4 @@ Before major changes:
 4. Make the smallest safe change.
 5. Preserve behavior unless explicitly asked.
 
-Ask before destructive database commands, auth changes, public API changes, proto field changes, broad refactors, deleting `bff/`, or adding major dependencies.
+Ask before destructive database commands, auth changes, public API changes, proto field changes, broad refactors, or adding major dependencies.

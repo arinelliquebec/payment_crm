@@ -10,20 +10,18 @@ import {
   ReactNode,
 } from "react";
 import { apiClient } from "@/lib/api";
-import { getBffUrl } from "../../env.config";
 import { useRouter } from "next/navigation";
 import { UsuarioPermissoes } from "@/types/permissions";
 import { permissionService } from "@/services/permission.service";
 import { userService } from "@/services/user.service";
 import { useAuthCheck } from "@/hooks/useAuthCheck";
 
-// Faz chamadas diretas ao BFF (auth/login, auth/logout, auth/me)
-// sem passar pelo apiClient (que aponta para /api/*)
-async function bffFetch<T>(
+// Auth via route handlers same-origin (`/api/auth/*`): cookie httpOnly bff_session.
+async function authApiFetch<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<{ data?: T; error?: string; status: number }> {
-  const url = `${getBffUrl()}${path}`;
+  const url = `/api${path}`;
   try {
     const res = await fetch(url, {
       ...options,
@@ -35,7 +33,7 @@ async function bffFetch<T>(
     if (!res.ok) {
       const msg =
         (data as any)?.message ?? text ?? `Erro ${res.status}`;
-      return { error: msg, status: res.status };
+      return { error: String(msg), status: res.status };
     }
     return { data, status: res.status };
   } catch (err: any) {
@@ -200,7 +198,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const checkAuth = async () => {
     try {
       // Verifica a sessão perguntando ao BFF (lê o cookie httpOnly)
-      const { data, error } = await bffFetch<User>("/auth/me");
+      const { data, error } = await authApiFetch<User>("/auth/me");
 
       if (error || !data) {
         // Cookie inexistente ou expirado — limpar estado local
@@ -302,7 +300,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }): Promise<{ success: boolean; error?: string }> => {
     try {
       // BFF seta o cookie httpOnly e retorna { success, user }
-      const response = await bffFetch<{ success: boolean; user: User }>(
+      const response = await authApiFetch<{ success: boolean; user: User }>(
         "/auth/login",
         { method: "POST", body: JSON.stringify(loginData) }
       );
@@ -364,7 +362,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // Invalidar cookie httpOnly no BFF
-    await bffFetch("/auth/logout", { method: "POST" }).catch(() => {});
+    await authApiFetch("/auth/logout", { method: "POST" }).catch(() => {});
 
     stopHeartbeat();
 

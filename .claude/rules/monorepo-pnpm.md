@@ -4,7 +4,6 @@ paths:
   - "pnpm-lock.yaml"
   - "pnpm-workspace.yaml"
   - "frontend/package.json"
-  - "bff/package.json"
 ---
 
 # Monorepo / PNPM Workspace
@@ -13,7 +12,6 @@ This repository uses a root-level monorepo structure.
 
 Current major workspaces:
 - frontend
-- bff
 - backend
 
 Before changing scripts or dependencies:

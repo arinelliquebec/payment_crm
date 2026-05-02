@@ -3,12 +3,10 @@ paths:
   - "proto/**/*.proto"
   - "services/**/*.proto"
   - "services/**/*.pb.go"
-  - "bff/src/contracts/**/*"
   - "frontend/**/*api/**/*"
   - "frontend/**/*client/**/*"
   - "backend/**/*Contracts*"
   - "backend/**/*Dto*"
-  - "bff/**/*dto*"
 ---
 
 # Contracts: REST, DTOs, gRPC
@@ -32,6 +30,6 @@ For gRPC:
 - version APIs when breaking changes are required
 - keep generated code separate from handwritten code
 
-For BFF/frontend contracts:
+For frontend contracts:
 - keep DTOs frontend-friendly
 - avoid duplicating deep backend domain models

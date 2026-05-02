@@ -41,6 +41,7 @@
     "framer-motion": "^12.23.22",
     "html2canvas": "^1.4.1",
     "isomorphic-dompurify": "^2.34.0",
+    "jose": "^6.2.3",
     "jsdom": "^27.3.0",
     "jspdf": "^3.0.4",
     "langchain": "^1.1.2",

@@ -5,25 +5,18 @@
   "installCommand": "pnpm install",
   "devCommand": "pnpm run dev",
   "regions": ["gru1"],
-  "env": {
-    "NEXT_PUBLIC_BFF_URL": "/bff"
-  },
   "functions": {
     "src/app/api/cep/[cep]/route.ts": {
       "maxDuration": 10
+    },
+    "src/app/api/backend/[...path]/route.ts": {
+      "maxDuration": 120
     }
   },
   "build": {
     "env": {
       "NODE_ENV": "production",
-      "NEXT_PUBLIC_BFF_URL": "/bff",
       "BACKEND_URL": "https://arrighi-bk-bzfmgxavaxbyh5ej.brazilsouth-01.azurewebsites.net/api"
     }
-  },
-  "rewrites": [
-    {
-      "source": "/bff/:path*",
-      "destination": "https://bff.arrighicrm.com/:path*"
-    }
-  ]
+  }
 }
