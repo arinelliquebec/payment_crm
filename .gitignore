@@ -134,3 +134,18 @@ temp/
 .env
 .env.*
 !.env.example
+
+# Local secrets / credentials
+.env
+.env.*
+!.env.example
+
+# Personal MCP configs
+.cursor/mcp.json
+.mcp.json
+CLAUDE.local.md
+
+# Local database/token artifacts
+*.local.sql
+*.dump
+*.backup

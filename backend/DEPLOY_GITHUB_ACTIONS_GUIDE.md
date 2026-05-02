@@ -80,13 +80,13 @@ No Portal Azure, vá para sua App Service → **Configuration** → **Applicatio
 
 ### 2. String de Conexão
 
-Configure em **Configuration** → **Connection strings**:
+Backend usa PostgreSQL via Npgsql. Configure em **Configuration** → **Connection strings** (ou via env vars `PGHOST` / `PGUSER` / `PGPASSWORD` / `PGDATABASE`):
 
 ```json
 {
   "DefaultConnection": {
-    "value": "Server=seu-servidor;Database=seu-banco;User Id=usuario;Password=senha;TrustServerCertificate=true;",
-    "type": "SQLServer"
+    "value": "Host=seu-host;Port=5432;Database=seu-banco;Username=usuario;Password=senha;SSL Mode=Require;Trust Server Certificate=true",
+    "type": "Custom"
   }
 }
 ```

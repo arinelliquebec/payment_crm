@@ -1,26 +1,22 @@
 version: "3.8"
 
 services:
-  # SQL Server para macOS (compatível com Apple Silicon)
-  sqlserver:
-    image: mcr.microsoft.com/azure-sql-edge:latest
-    container_name: crm-arrighi-sqlserver-mac
+  # PostgreSQL para macOS (compatível com Apple Silicon)
+  postgres:
+    image: postgres:16-alpine
+    container_name: crm-arrighi-postgres-mac
     environment:
-      - ACCEPT_EULA=1
-      - SA_PASSWORD=YourStrong@Passw0rd
-      - MSSQL_PID=Developer
+      - POSTGRES_USER=portfolio_user
+      - POSTGRES_PASSWORD=portfolio_password
+      - POSTGRES_DB=payment_crm_demo
     ports:
-      - "1433:1433"
+      - "5432:5432"
     volumes:
-      - sqlserver_data:/var/opt/mssql
+      - postgres_data:/var/lib/postgresql/data
     networks:
       - crm-network
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong@Passw0rd -Q 'SELECT 1'",
-        ]
+      test: ["CMD-SHELL", "pg_isready -U portfolio_user -d payment_crm_demo"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -36,9 +32,9 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:5101
-      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=CrmArrighi;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=true;MultipleActiveResultSets=true
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=payment_crm_demo;Username=portfolio_user;Password=portfolio_password
     depends_on:
-      sqlserver:
+      postgres:
         condition: service_healthy
     networks:
       - crm-network
@@ -78,4 +74,4 @@ networks:
     driver: bridge
 
 volumes:
-  sqlserver_data:
+  postgres_data:

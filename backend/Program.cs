@@ -407,30 +407,8 @@ using (var scope = app.Services.CreateScope())
     var context = scope.ServiceProvider.GetRequiredService<CrmArrighiContext>();
     var seedDataService = scope.ServiceProvider.GetRequiredService<ISeedDataService>();
 
-    // Os helpers legados usam SQL Server puro. No PostgreSQL, as tabelas devem
-    // existir via migração/seed próprios para evitar executar sintaxe [dbo].
-    if (context.Database.IsSqlServer())
-    {
-        // Criar tabelas de Grupos de Acesso primeiro
-        await CrmArrighi.Helpers.CreateGruposAcessoTableHelper.CreateGruposAcessoTablesIfNotExists(context);
-
-        // Criar tabela de Parceiros
-        await CreateTableHelper.CreateParceirosTableIfNotExists(context);
-
-        // Criar tabela de Sessões Ativas
-        await CreateTableHelper.CreateSessoesAtivasTableIfNotExists(context);
-
-        // Criar tabela de Histórico de Clientes
-        await CreateTableHelper.CreateHistoricoClientesTableIfNotExists(context);
-
-        // Criar tabela de Documentos do Portal
-        await CreateTableHelper.CreateDocumentosPortalTableIfNotExists(context);
-    }
-    else
-    {
-        Console.WriteLine("🐘 PostgreSQL ativo: criando tabelas base de grupos/permissões se necessário.");
-        await EnsurePostgreSqlAccessTablesAsync(context);
-    }
+    Console.WriteLine("🐘 PostgreSQL ativo: criando tabelas base de grupos/permissões se necessário.");
+    await EnsurePostgreSqlAccessTablesAsync(context);
 
     // Fazer seed dos dados
     await seedDataService.SeedAllAsync();

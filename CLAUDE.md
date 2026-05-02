@@ -1,5 +1,27 @@
 # CLAUDE.md
 
+## Repository Exploration Policy
+
+When repository context is needed, do not guess.
+
+If Augment codebase-retrieval is available, use it.
+
+If Augment is not available in the current environment, use Claude Code native tools instead:
+- Glob to map files and folders
+- Grep to find symbols, routes, DTOs, services, configs, migrations, and usages
+- Read to inspect relevant files
+- Explore subagent for broader repository investigation
+
+Before architecture reviews, refactors, bug investigations, or cross-file changes:
+1. Map the relevant repository structure.
+2. Identify involved frontend, BFF, backend, services, database, and infra files.
+3. Read the most relevant files.
+4. Summarize the current implementation.
+5. Explain the plan before editing.
+6. Avoid broad changes unless explicitly requested.
+
+Do not assume architecture from folder names alone.
+
 Act as a senior staff/principal software architect and implementation partner.
 
 This is a portfolio project, but treat it as a production-grade SaaS/fintech system.
