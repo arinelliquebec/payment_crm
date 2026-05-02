@@ -91,9 +91,6 @@ namespace CrmArrighi.Controllers
                     return Unauthorized("Usuário não identificado na requisição.");
                 }
 
-                // Verificar se a tabela e colunas existem
-                await EnsureParceirosTableExists();
-
                 var parceirosQuery = _context.Parceiros
                     .Include(p => p.PessoaFisica)
                         .ThenInclude(pf => pf!.Endereco)
@@ -231,9 +228,6 @@ namespace CrmArrighi.Controllers
 
             try
             {
-                // Verificar se a tabela Parceiros existe, se não, criar
-                await EnsureParceirosTableExists();
-
                 // Verificar se a pessoa física existe
                 var pessoaFisica = await _context.PessoasFisicas.FindAsync(createParceiroDTO.PessoaFisicaId);
                 if (pessoaFisica == null)
@@ -406,121 +400,9 @@ namespace CrmArrighi.Controllers
             }
         }
 
-        // POST: api/Parceiro/migrate-columns
-        [HttpPost("migrate-columns")]
-        public async Task<ActionResult> MigrateColumns()
-        {
-            try
-            {
-                await EnsureEmailAndTelefoneColumnsExist();
-                return Ok(new { message = "Migração das colunas Email e Telefone concluída com sucesso" });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Erro ao executar migração: {ex.Message}");
-            }
-        }
-
-
-
         private bool ParceiroExists(int id)
         {
             return _context.Parceiros.Any(e => e.Id == id);
-        }
-
-        private async Task EnsureParceirosTableExists()
-        {
-            try
-            {
-                // Tentar executar uma query simples na tabela Parceiros
-                await _context.Database.ExecuteSqlRawAsync("SELECT TOP 1 * FROM Parceiros");
-
-                // Verificar se os campos Email e Telefone existem
-                await EnsureEmailAndTelefoneColumnsExist();
-            }
-            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Message.Contains("Invalid object name 'Parceiros'"))
-            {
-                // Tabela não existe, criar agora
-                await _context.Database.ExecuteSqlRawAsync(@"
-                    CREATE TABLE [dbo].[Parceiros] (
-                        [Id] int IDENTITY(1,1) NOT NULL,
-                        [PessoaFisicaId] int NOT NULL,
-                        [FilialId] int NOT NULL,
-                        [OAB] nvarchar(20) NULL,
-                        [Email] nvarchar(100) NULL,
-                        [Telefone] nvarchar(20) NULL,
-                        [DataCadastro] datetime2 NOT NULL,
-                        [DataAtualizacao] datetime2 NULL,
-                        [Ativo] bit NOT NULL,
-                        CONSTRAINT [PK_Parceiros] PRIMARY KEY ([Id])
-                    );
-
-                    CREATE INDEX [IX_Parceiros_FilialId] ON [dbo].[Parceiros] ([FilialId]);
-                    CREATE UNIQUE INDEX [IX_Parceiros_PessoaFisicaId] ON [dbo].[Parceiros] ([PessoaFisicaId]);
-
-                    ALTER TABLE [dbo].[Parceiros] ADD CONSTRAINT [FK_Parceiros_Filiais_FilialId]
-                        FOREIGN KEY ([FilialId]) REFERENCES [dbo].[Filiais] ([Id]);
-                    ALTER TABLE [dbo].[Parceiros] ADD CONSTRAINT [FK_Parceiros_PessoasFisicas_PessoaFisicaId]
-                        FOREIGN KEY ([PessoaFisicaId]) REFERENCES [dbo].[PessoasFisicas] ([Id]);
-                ");
-
-                Console.WriteLine("Tabela Parceiros criada com sucesso!");
-            }
-
-            // Sempre verificar se as colunas Email e Telefone existem
-            await EnsureEmailAndTelefoneColumnsExist();
-        }
-
-        private async Task EnsureEmailAndTelefoneColumnsExist()
-        {
-            try
-            {
-                Console.WriteLine("Verificando e adicionando campos Email e Telefone à tabela Parceiros...");
-
-                // Tentar adicionar as colunas diretamente - se já existirem, o SQL Server retornará erro que podemos ignorar
-                try
-                {
-                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE [Parceiros] ADD [Email] NVARCHAR(100) NULL");
-                    Console.WriteLine("✅ Campo Email adicionado à tabela Parceiros");
-                }
-                catch (Exception emailEx)
-                {
-                    if (emailEx.Message.Contains("already exists") || emailEx.Message.Contains("duplicate") || emailEx.Message.Contains("Column names in each table must be unique"))
-                    {
-                        Console.WriteLine("ℹ️  Campo Email já existe na tabela Parceiros");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"❌ Erro ao adicionar campo Email: {emailEx.Message}");
-                        throw;
-                    }
-                }
-
-                try
-                {
-                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE [Parceiros] ADD [Telefone] NVARCHAR(20) NULL");
-                    Console.WriteLine("✅ Campo Telefone adicionado à tabela Parceiros");
-                }
-                catch (Exception telefoneEx)
-                {
-                    if (telefoneEx.Message.Contains("already exists") || telefoneEx.Message.Contains("duplicate") || telefoneEx.Message.Contains("Column names in each table must be unique"))
-                    {
-                        Console.WriteLine("ℹ️  Campo Telefone já existe na tabela Parceiros");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"❌ Erro ao adicionar campo Telefone: {telefoneEx.Message}");
-                        throw;
-                    }
-                }
-
-                Console.WriteLine("✅ Verificação dos campos Email e Telefone concluída");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Erro geral ao verificar/adicionar campos Email e Telefone: {ex.Message}");
-                throw;
-            }
         }
     }
 }

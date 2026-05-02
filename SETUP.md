@@ -21,7 +21,7 @@ Este documento explica como configurar o projeto para funcionar tanto em desenvo
 
 3. **Configurações de Desenvolvimento**
    - Logs detalhados habilitados
-   - CORS configurado para permitir localhost:3000 e localhost:3001
+   - CORS configurado para permitir a origem do Next.js (ex.: `http://localhost:3000`)
    - Logs de queries SQL habilitados
 
 ### Frontend (Next.js)

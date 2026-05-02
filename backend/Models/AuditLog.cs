@@ -49,11 +49,11 @@ namespace CrmArrighi.Models
         public string Descricao { get; set; } = string.Empty;
 
         /// <summary>JSON com os valores anteriores (para Update/Delete).</summary>
-        [Column(TypeName = "nvarchar(max)")]
+        [Column(TypeName = "text")]
         public string? ValorAnterior { get; set; }
 
         /// <summary>JSON com os valores novos (para Create/Update).</summary>
-        [Column(TypeName = "nvarchar(max)")]
+        [Column(TypeName = "text")]
         public string? ValorNovo { get; set; }
 
         /// <summary>Campos que foram alterados (separados por vírgula).</summary>

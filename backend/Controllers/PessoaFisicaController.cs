@@ -266,9 +266,6 @@ namespace CrmArrighi.Controllers
             {
                 Console.WriteLine($"🔍 GetPessoaFisicaPorCpf: Buscando pessoa física com CPF: {cpf}");
 
-                // Garantir que as colunas EmailEmpresarial e EmailPessoal existem
-                await EnsureEmailColumnsExist();
-
                 // Remover caracteres especiais do CPF para busca
                 var cpfLimpo = cpf.Replace(".", "").Replace("-", "").Replace(" ", "");
                 Console.WriteLine($"🔍 GetPessoaFisicaPorCpf: CPF limpo: {cpfLimpo}");
@@ -318,9 +315,6 @@ namespace CrmArrighi.Controllers
             {
                 Console.WriteLine("🔍 GetResponsaveisTecnicos: Buscando responsáveis técnicos");
 
-                // Garantir que as colunas EmailEmpresarial e EmailPessoal existem
-                await EnsureEmailColumnsExist();
-
                 var responsaveis = await _context.PessoasFisicas
                     .Include(p => p.Endereco)
                     .Select(p => new {
@@ -366,12 +360,6 @@ namespace CrmArrighi.Controllers
             {
                 Console.WriteLine($"🔍 PostPessoaFisica: Iniciando criação de pessoa física");
                 Console.WriteLine($"🔍 PostPessoaFisica: Nome: {dto.Nome}, CPF: {dto.Cpf}");
-
-                // Garantir que as colunas EmailEmpresarial e EmailPessoal existem
-                await EnsureEmailColumnsExist();
-
-                // Garantir que colunas opcionais estejam configuradas como NULL no banco (produção legado)
-                await EnsurePessoaFisicaOptionalColumnsAreNullable();
 
                 // Sanitizar dados de entrada
                 PessoaFisicaValidationService.SanitizeData(dto);
@@ -480,9 +468,6 @@ namespace CrmArrighi.Controllers
             {
                 return BadRequest();
             }
-
-            // Garantir que as colunas EmailEmpresarial e EmailPessoal existem
-            await EnsureEmailColumnsExist();
 
             if (ModelState.IsValid)
             {
@@ -642,150 +627,9 @@ namespace CrmArrighi.Controllers
             return NoContent();
         }
 
-        // POST: api/PessoaFisica/admin/migrate-email-columns
-        [HttpPost("admin/migrate-email-columns")]
-        public async Task<IActionResult> MigrateEmailColumns()
-        {
-            try
-            {
-                Console.WriteLine("🔧 MigrateEmailColumns: Iniciando migração de colunas de email para PessoasFisicas");
-
-                // Garantir que as colunas EmailEmpresarial e EmailPessoal existem
-                await EnsureEmailColumnsExist();
-
-                return Ok(new { message = "Migração de colunas de email concluída com sucesso" });
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ MigrateEmailColumns: Erro durante migração: {ex.Message}");
-                return StatusCode(500, $"Erro durante migração: {ex.Message}");
-            }
-        }
-
         private bool PessoaFisicaExists(int id)
         {
             return _context.PessoasFisicas.Any(e => e.Id == id);
-        }
-
-        private async Task EnsureEmailColumnsExist()
-        {
-            try
-            {
-                Console.WriteLine("🔧 EnsureEmailColumnsExist: Verificando se colunas EmailEmpresarial e EmailPessoal existem na tabela PessoasFisicas");
-
-                // Verificar estrutura atual da tabela
-                var tableStructure = await _context.Database
-                    .SqlQueryRaw<string>(@"
-                        SELECT COLUMN_NAME
-                        FROM INFORMATION_SCHEMA.COLUMNS
-                        WHERE TABLE_NAME = 'PessoasFisicas'
-                        ORDER BY ORDINAL_POSITION")
-                    .ToListAsync();
-
-                Console.WriteLine($"🔍 EnsureEmailColumnsExist: Colunas atuais na tabela: {string.Join(", ", tableStructure)}");
-
-                bool emailExists = tableStructure.Contains("Email");
-                bool emailEmpresarialExists = tableStructure.Contains("EmailEmpresarial");
-                bool emailPessoalExists = tableStructure.Contains("EmailPessoal");
-
-                // Cenário 1: Só existe Email (precisa renomear)
-                if (emailExists && !emailEmpresarialExists)
-                {
-                    Console.WriteLine("➕ EnsureEmailColumnsExist: Renomeando coluna Email para EmailEmpresarial");
-                    try
-                    {
-                        await _context.Database.ExecuteSqlRawAsync("EXEC sp_rename 'PessoasFisicas.Email', 'EmailEmpresarial', 'COLUMN'");
-                        Console.WriteLine("✅ EnsureEmailColumnsExist: Coluna Email renomeada para EmailEmpresarial com sucesso");
-                        emailEmpresarialExists = true;
-                    }
-                    catch (Exception renameEx)
-                    {
-                        Console.WriteLine($"⚠️ EnsureEmailColumnsExist: Erro ao renomear coluna Email: {renameEx.Message}");
-                        // Se não conseguir renomear, tentar criar EmailEmpresarial
-                        if (!emailEmpresarialExists)
-                        {
-                            await _context.Database.ExecuteSqlRawAsync("ALTER TABLE PessoasFisicas ADD EmailEmpresarial NVARCHAR(150) NOT NULL DEFAULT ''");
-                            Console.WriteLine("✅ EnsureEmailColumnsExist: Coluna EmailEmpresarial criada como alternativa");
-                            emailEmpresarialExists = true;
-                        }
-                    }
-                }
-                // Cenário 2: EmailEmpresarial não existe (criar)
-                else if (!emailEmpresarialExists)
-                {
-                    Console.WriteLine("➕ EnsureEmailColumnsExist: Criando coluna EmailEmpresarial");
-                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE PessoasFisicas ADD EmailEmpresarial NVARCHAR(150) NOT NULL DEFAULT ''");
-                    Console.WriteLine("✅ EnsureEmailColumnsExist: Coluna EmailEmpresarial criada com sucesso");
-                    emailEmpresarialExists = true;
-                }
-                else
-                {
-                    Console.WriteLine("ℹ️ EnsureEmailColumnsExist: Coluna EmailEmpresarial já existe");
-                }
-
-                // Criar coluna EmailPessoal se não existir
-                if (!emailPessoalExists)
-                {
-                    Console.WriteLine("➕ EnsureEmailColumnsExist: Criando coluna EmailPessoal");
-                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE PessoasFisicas ADD EmailPessoal NVARCHAR(150) NULL");
-                    Console.WriteLine("✅ EnsureEmailColumnsExist: Coluna EmailPessoal criada com sucesso");
-                }
-                else
-                {
-                    Console.WriteLine("ℹ️ EnsureEmailColumnsExist: Coluna EmailPessoal já existe");
-                }
-
-                Console.WriteLine("✅ EnsureEmailColumnsExist: Verificação de colunas de email concluída");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ EnsureEmailColumnsExist: Erro geral: {ex.Message}");
-                Console.WriteLine($"❌ EnsureEmailColumnsExist: StackTrace: {ex.StackTrace}");
-                // Não propagar o erro para não quebrar a aplicação
-                // O sistema deve funcionar mesmo se as colunas não puderem ser criadas
-            }
-        }
-
-        // Ajusta colunas legadas que eram NOT NULL para aceitarem NULL conforme o modelo atual
-        private async Task EnsurePessoaFisicaOptionalColumnsAreNullable()
-        {
-            try
-            {
-                var columns = await _context.Database
-                    .SqlQueryRaw<(string ColumnName, string IsNullable, string DataType)>(@"
-                        SELECT COLUMN_NAME as ColumnName, IS_NULLABLE as IsNullable, DATA_TYPE as DataType
-                        FROM INFORMATION_SCHEMA.COLUMNS
-                        WHERE TABLE_NAME = 'PessoasFisicas' AND COLUMN_NAME IN ('Sexo','DataNascimento','EstadoCivil','Telefone1')")
-                    .ToListAsync();
-
-                foreach (var col in columns)
-                {
-                    if (col.ColumnName == "DataNascimento" && col.IsNullable == "NO")
-                    {
-                        Console.WriteLine("🔧 Ajustando PessoasFisicas.DataNascimento para permitir NULL");
-                        await _context.Database.ExecuteSqlRawAsync("ALTER TABLE PessoasFisicas ALTER COLUMN DataNascimento datetime2 NULL");
-                    }
-                    else if (col.ColumnName == "Sexo" && col.IsNullable == "NO")
-                    {
-                        Console.WriteLine("🔧 Ajustando PessoasFisicas.Sexo para permitir NULL");
-                        await _context.Database.ExecuteSqlRawAsync("ALTER TABLE PessoasFisicas ALTER COLUMN Sexo nvarchar(max) NULL");
-                    }
-                    else if (col.ColumnName == "EstadoCivil" && col.IsNullable == "NO")
-                    {
-                        Console.WriteLine("🔧 Ajustando PessoasFisicas.EstadoCivil para permitir NULL");
-                        await _context.Database.ExecuteSqlRawAsync("ALTER TABLE PessoasFisicas ALTER COLUMN EstadoCivil nvarchar(max) NULL");
-                    }
-                    else if (col.ColumnName == "Telefone1" && col.IsNullable == "NO")
-                    {
-                        Console.WriteLine("🔧 Ajustando PessoasFisicas.Telefone1 para permitir NULL");
-                        await _context.Database.ExecuteSqlRawAsync("ALTER TABLE PessoasFisicas ALTER COLUMN Telefone1 nvarchar(15) NULL");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"⚠️ EnsurePessoaFisicaOptionalColumnsAreNullable: {ex.Message}");
-            }
         }
     }
 }

@@ -43,9 +43,8 @@ namespace CrmArrighi.Data
         // Documentos do Portal
         public DbSet<DocumentoPortal> DocumentosPortal { get; set; }
 
-        // Funcionários
-        public DbSet<PessoaFuncionario> PessoasFuncionarios { get; set; }
-        public DbSet<Funcionario> Funcionarios { get; set; }
+        // Nota: Funcionarios/PessoasFuncionarios serão reintroduzidos numa
+        // migração dedicada quando os modelos Fradema estiverem alinhados.
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -374,7 +373,7 @@ namespace CrmArrighi.Data
 
             modelBuilder.Entity<CredencialPortalCliente>()
                 .HasIndex(c => c.TokenAcesso)
-                .HasFilter("[TokenAcesso] IS NOT NULL");
+                .HasFilter("\"TokenAcesso\" IS NOT NULL");
 
             modelBuilder.Entity<CredencialPortalCliente>()
                 .HasOne(c => c.Cliente)
@@ -399,19 +398,6 @@ namespace CrmArrighi.Data
                 .HasOne(d => d.Cliente)
                 .WithMany()
                 .HasForeignKey(d => d.ClienteId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            // ── Funcionários ────────────────────────────────────────────
-            modelBuilder.Entity<PessoaFuncionario>()
-                .ToTable("PessoasFuncionarios");
-
-            modelBuilder.Entity<Funcionario>()
-                .ToTable("Funcionarios");
-
-            modelBuilder.Entity<Funcionario>()
-                .HasOne(c => c.PessoaFisica)
-                .WithMany()
-                .HasForeignKey(c => c.PessoaFisicaId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             // ── AuditLogs ──────────────────────────────────────────────
