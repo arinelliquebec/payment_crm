@@ -288,9 +288,6 @@ namespace CrmArrighi.Controllers
         {
             try
             {
-                // Verificar se a tabela HistoricoSituacaoContratos existe, se não, criar
-                await EnsureHistoricoTableExists();
-
                 // Verificar se o contrato existe
                 var contrato = await _context.Contratos.FindAsync(historicoDTO.ContratoId);
                 if (contrato == null)
@@ -330,9 +327,6 @@ namespace CrmArrighi.Controllers
         {
             try
             {
-                // Verificar se a tabela HistoricoSituacaoContratos existe, se não, criar
-                await EnsureHistoricoTableExists();
-
                 // Buscar e remover histórico real
                 var historico = await _context.HistoricoSituacaoContratos.FindAsync(id);
                 if (historico == null)
@@ -352,36 +346,5 @@ namespace CrmArrighi.Controllers
             }
         }
 
-        private async Task EnsureHistoricoTableExists()
-        {
-            try
-            {
-                // Tentar executar uma query simples na tabela HistoricoSituacaoContratos
-                await _context.Database.ExecuteSqlRawAsync("SELECT TOP 1 * FROM HistoricoSituacaoContratos");
-            }
-            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Message.Contains("Invalid object name 'HistoricoSituacaoContratos'"))
-            {
-                // Tabela não existe, criar agora
-                await _context.Database.ExecuteSqlRawAsync(@"
-                    CREATE TABLE [dbo].[HistoricoSituacaoContratos] (
-                        [Id] int IDENTITY(1,1) NOT NULL,
-                        [ContratoId] int NOT NULL,
-                        [SituacaoAnterior] nvarchar(50) NOT NULL,
-                        [NovaSituacao] nvarchar(50) NOT NULL,
-                        [MotivoMudanca] nvarchar(500) NULL,
-                        [DataMudanca] datetime2 NOT NULL,
-                        [DataCadastro] datetime2 NOT NULL,
-                        CONSTRAINT [PK_HistoricoSituacaoContratos] PRIMARY KEY ([Id])
-                    );
-
-                    CREATE INDEX [IX_HistoricoSituacaoContratos_ContratoId] ON [dbo].[HistoricoSituacaoContratos] ([ContratoId]);
-
-                    ALTER TABLE [dbo].[HistoricoSituacaoContratos] ADD CONSTRAINT [FK_HistoricoSituacaoContratos_Contratos_ContratoId]
-                        FOREIGN KEY ([ContratoId]) REFERENCES [dbo].[Contratos] ([Id]);
-                ");
-
-                Console.WriteLine("Tabela HistoricoSituacaoContratos criada com sucesso!");
-            }
-        }
     }
 }

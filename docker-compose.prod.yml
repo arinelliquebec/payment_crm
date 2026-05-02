@@ -1,21 +1,26 @@
 version: "3.8"
 
 services:
-  # SQL Server para produção
-  sqlserver:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: crm-arrighi-sqlserver-prod
+  # PostgreSQL para produção
+  postgres:
+    image: postgres:16-alpine
+    container_name: crm-arrighi-postgres-prod
     environment:
-      - ACCEPT_EULA=Y
-      - SA_PASSWORD=YourStrong@Passw0rd
-      - MSSQL_PID=Developer
+      - POSTGRES_USER=portfolio_user
+      - POSTGRES_PASSWORD=portfolio_password
+      - POSTGRES_DB=payment_crm_demo
     ports:
-      - "1433:1433"
+      - "5432:5432"
     volumes:
-      - sqlserver_prod_data:/var/opt/mssql
+      - postgres_prod_data:/var/lib/postgresql/data
     networks:
       - crm-network-prod
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U portfolio_user -d payment_crm_demo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # Backend API para produção
   backend:
@@ -28,9 +33,10 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:5101
-      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=CrmArrighi;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=true;MultipleActiveResultSets=true
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=payment_crm_demo;Username=portfolio_user;Password=portfolio_password
     depends_on:
-      - sqlserver
+      postgres:
+        condition: service_healthy
     networks:
       - crm-network-prod
     restart: unless-stopped
@@ -57,4 +63,4 @@ networks:
     driver: bridge
 
 volumes:
-  sqlserver_prod_data:
+  postgres_prod_data:

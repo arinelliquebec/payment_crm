@@ -3,8 +3,8 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace CrmArrighi.Models
 {
-    [Table("PessoasFisicasFradema")]
-    public class PessoaFisicaFradema
+    [Table("PessoasFuncionarios")]
+    public class PessoaFuncionario
     {
         public int Id { get; set; }
 

@@ -1089,7 +1089,7 @@ const HealthStatusCard = () => {
 
   const getServiceName = (name: string) => {
     const names: Record<string, string> = {
-      sql_server: "SQL Server",
+      postgresql: "PostgreSQL",
       santander_api: "API Santander",
       azure_storage: "Azure Storage",
       backend: "Backend",

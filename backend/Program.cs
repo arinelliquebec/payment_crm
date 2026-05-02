@@ -269,95 +269,6 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// 🔥 Executar migration AddDataHoraOffline automaticamente ao iniciar
-using (var scope = app.Services.CreateScope())
-{
-    var services = scope.ServiceProvider;
-    try
-    {
-        var context = services.GetRequiredService<CrmArrighiContext>();
-        Console.WriteLine("🔄 Executando migration AddDataHoraOfflineToSessaoAtiva...");
-        await ExecuteMigrationHelper.ExecuteAddDataHoraOfflineMigrationAsync(context);
-        Console.WriteLine("✅ Migration executada com sucesso!");
-    }
-    catch (Exception ex)
-    {
-        var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "❌ Erro ao executar migration AddDataHoraOfflineToSessaoAtiva");
-        Console.WriteLine($"❌ Erro: {ex.Message}");
-    }
-}
-
-// 🔥 Criar tabela PasswordResets automaticamente ao iniciar
-using (var scope = app.Services.CreateScope())
-{
-    var services = scope.ServiceProvider;
-    try
-    {
-        var context = services.GetRequiredService<CrmArrighiContext>();
-        Console.WriteLine("🔄 Verificando tabela PasswordResets...");
-        await PasswordResetTableHelper.EnsurePasswordResetTableExistsAsync(context);
-        Console.WriteLine("✅ Tabela PasswordResets pronta!");
-    }
-    catch (Exception ex)
-    {
-        var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "❌ Erro ao verificar/criar tabela PasswordResets");
-        Console.WriteLine($"❌ Erro: {ex.Message}");
-    }
-}
-
-// 🔥 Criar tabela AuditLogs automaticamente ao iniciar
-using (var scope = app.Services.CreateScope())
-{
-    var services = scope.ServiceProvider;
-    try
-    {
-        var context = services.GetRequiredService<CrmArrighiContext>();
-        Console.WriteLine("🔄 Verificando tabela AuditLogs...");
-        await context.Database.ExecuteSqlRawAsync(@"
-            IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'AuditLogs')
-            BEGIN
-                CREATE TABLE [AuditLogs] (
-                    [Id] int NOT NULL IDENTITY(1,1),
-                    [UsuarioId] int NOT NULL,
-                    [UsuarioNome] nvarchar(200) NOT NULL,
-                    [UsuarioLogin] nvarchar(100) NULL,
-                    [GrupoAcesso] nvarchar(100) NULL,
-                    [Acao] nvarchar(50) NOT NULL,
-                    [Entidade] nvarchar(100) NOT NULL,
-                    [EntidadeId] int NULL,
-                    [Descricao] nvarchar(500) NOT NULL,
-                    [ValorAnterior] nvarchar(max) NULL,
-                    [ValorNovo] nvarchar(max) NULL,
-                    [CamposAlterados] nvarchar(1000) NULL,
-                    [IpAddress] nvarchar(50) NULL,
-                    [UserAgent] nvarchar(500) NULL,
-                    [Modulo] nvarchar(100) NULL,
-                    [Severidade] nvarchar(20) NOT NULL DEFAULT 'Info',
-                    [DataHora] datetime2 NOT NULL,
-                    CONSTRAINT [PK_AuditLogs] PRIMARY KEY ([Id])
-                );
-
-                CREATE INDEX [IX_AuditLogs_UsuarioId] ON [AuditLogs] ([UsuarioId]);
-                CREATE INDEX [IX_AuditLogs_DataHora] ON [AuditLogs] ([DataHora]);
-                CREATE INDEX [IX_AuditLogs_Acao] ON [AuditLogs] ([Acao]);
-                CREATE INDEX [IX_AuditLogs_Entidade] ON [AuditLogs] ([Entidade]);
-                CREATE INDEX [IX_AuditLogs_Severidade] ON [AuditLogs] ([Severidade]);
-
-                PRINT 'Tabela AuditLogs criada com sucesso!';
-            END
-        ");
-        Console.WriteLine("✅ Tabela AuditLogs pronta!");
-    }
-    catch (Exception ex)
-    {
-        var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "❌ Erro ao verificar/criar tabela AuditLogs");
-        Console.WriteLine($"❌ Erro AuditLogs: {ex.Message}");
-    }
-}
-
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
@@ -407,30 +318,8 @@ using (var scope = app.Services.CreateScope())
     var context = scope.ServiceProvider.GetRequiredService<CrmArrighiContext>();
     var seedDataService = scope.ServiceProvider.GetRequiredService<ISeedDataService>();
 
-    // Os helpers legados usam SQL Server puro. No PostgreSQL, as tabelas devem
-    // existir via migração/seed próprios para evitar executar sintaxe [dbo].
-    if (context.Database.IsSqlServer())
-    {
-        // Criar tabelas de Grupos de Acesso primeiro
-        await CrmArrighi.Helpers.CreateGruposAcessoTableHelper.CreateGruposAcessoTablesIfNotExists(context);
-
-        // Criar tabela de Parceiros
-        await CreateTableHelper.CreateParceirosTableIfNotExists(context);
-
-        // Criar tabela de Sessões Ativas
-        await CreateTableHelper.CreateSessoesAtivasTableIfNotExists(context);
-
-        // Criar tabela de Histórico de Clientes
-        await CreateTableHelper.CreateHistoricoClientesTableIfNotExists(context);
-
-        // Criar tabela de Documentos do Portal
-        await CreateTableHelper.CreateDocumentosPortalTableIfNotExists(context);
-    }
-    else
-    {
-        Console.WriteLine("🐘 PostgreSQL ativo: criando tabelas base de grupos/permissões se necessário.");
-        await EnsurePostgreSqlAccessTablesAsync(context);
-    }
+    Console.WriteLine("🐘 PostgreSQL ativo: criando tabelas base de grupos/permissões se necessário.");
+    await EnsurePostgreSqlAccessTablesAsync(context);
 
     // Fazer seed dos dados
     await seedDataService.SeedAllAsync();
