@@ -332,6 +332,7 @@ using (var scope = app.Services.CreateScope())
 
     // Fazer seed dos dados
     await seedDataService.SeedAllAsync();
+    await seedDataService.SeedBootstrapAdministratorIfConfiguredAsync();
 
     // 🔥 Verificar e corrigir grupo Administrador após seed
     Console.WriteLine("🔄 Verificando configuração do grupo Administrador...");

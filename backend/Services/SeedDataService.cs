@@ -1,16 +1,24 @@
 using Microsoft.EntityFrameworkCore;
 using CrmArrighi.Data;
 using CrmArrighi.Models;
+using Microsoft.Extensions.Hosting;
 
 namespace CrmArrighi.Services
 {
     public class SeedDataService : ISeedDataService
     {
         private readonly CrmArrighiContext _context;
+        private readonly IConfiguration _configuration;
+        private readonly IHostEnvironment _environment;
 
-        public SeedDataService(CrmArrighiContext context)
+        public SeedDataService(
+            CrmArrighiContext context,
+            IConfiguration configuration,
+            IHostEnvironment environment)
         {
             _context = context;
+            _configuration = configuration;
+            _environment = environment;
         }
 
         public async Task SeedGruposAcessoAsync()
@@ -338,6 +346,108 @@ namespace CrmArrighi.Services
             await SeedGruposAcessoAsync();
             await SeedPermissoesAsync();
             await SeedPermissoesGruposAsync();
+        }
+
+        /// <inheritdoc />
+        public async Task SeedBootstrapAdministratorIfConfiguredAsync()
+        {
+            var login = (_configuration["BootstrapAdmin:Login"] ?? string.Empty).Trim();
+            var password = _configuration["BootstrapAdmin:Password"] ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(login) || string.IsNullOrWhiteSpace(password))
+                return;
+
+            var explicitProd = _configuration.GetValue<bool>("BootstrapAdmin:Enabled");
+            if (!_environment.IsDevelopment() && !explicitProd)
+            {
+                Console.WriteLine("⚠️ BootstrapAdmin: omitido (requer Ambiente Development ou BootstrapAdmin:Enabled=true).");
+                return;
+            }
+
+            var grupoAdmin = await _context.GruposAcesso.AsNoTracking()
+                .FirstOrDefaultAsync(g => g.Nome == "Administrador" && g.Ativo);
+            if (grupoAdmin == null)
+            {
+                Console.WriteLine("❌ BootstrapAdmin: grupo 'Administrador' não encontrado.");
+                return;
+            }
+
+            var emailConfig = (_configuration["BootstrapAdmin:Email"] ?? string.Empty).Trim();
+            var email = string.IsNullOrEmpty(emailConfig)
+                ? $"{login}@bootstrap.local"
+                : emailConfig;
+
+            login = login.Length > 50 ? login[..50] : login;
+            email = email.Length > 150 ? email[..150] : email;
+
+            var updatePassword = _configuration.GetValue<bool>("BootstrapAdmin:UpdatePassword");
+            var hash = BCrypt.Net.BCrypt.HashPassword(password);
+
+            var existing = await _context.Usuarios.FirstOrDefaultAsync(u => u.Login == login);
+
+            if (existing != null)
+            {
+                var changed = false;
+                if (existing.GrupoAcessoId != grupoAdmin.Id)
+                {
+                    existing.GrupoAcessoId = grupoAdmin.Id;
+                    changed = true;
+                }
+
+                if (!string.Equals(existing.Email, email, StringComparison.Ordinal))
+                {
+                    existing.Email = email;
+                    changed = true;
+                }
+
+                if (!existing.Ativo)
+                {
+                    existing.Ativo = true;
+                    changed = true;
+                }
+
+                if (updatePassword)
+                {
+                    existing.Senha = hash;
+                    existing.DataAtualizacao = DateTime.UtcNow;
+                    changed = true;
+                }
+
+                if (changed)
+                    await _context.SaveChangesAsync();
+
+                Console.WriteLine(updatePassword
+                    ? $"✅ BootstrapAdmin: utilizador '{login}' atualizado (grupo/password conforme flags)."
+                    : $"✅ BootstrapAdmin: utilizador '{login}' já existia — grupo garantido como Administrador. Defina BootstrapAdmin__UpdatePassword=true para alterar senha.");
+
+                return;
+            }
+
+            if (await _context.Usuarios.AnyAsync(u => u.Email == email))
+            {
+                Console.WriteLine($"❌ BootstrapAdmin: e-mail '{email}' já está em uso; escolha BootstrapAdmin__Email distinto.");
+                return;
+            }
+
+            _context.Usuarios.Add(new Usuario
+            {
+                Login = login,
+                Email = email,
+                Senha = hash,
+                GrupoAcessoId = grupoAdmin.Id,
+                FilialId = null,
+                ConsultorId = null,
+                TipoPessoa = "Fisica",
+                PessoaFisicaId = null,
+                PessoaJuridicaId = null,
+                Ativo = true,
+                DataCadastro = DateTime.UtcNow,
+                UltimoAcesso = null,
+                DataAtualizacao = null
+            });
+
+            await _context.SaveChangesAsync();
+            Console.WriteLine($"✅ BootstrapAdmin: criado utilizador '{login}' com grupo Administrador.");
         }
     }
 }
