@@ -15,7 +15,6 @@
     "build:backend": "cd backend && dotnet build"
   },
   "workspaces": [
-    "frontend",
-    "backend"
+    "frontend"
   ]
 }
