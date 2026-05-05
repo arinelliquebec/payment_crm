@@ -1,0 +1,126 @@
+# Architecture
+
+C4 model for **Payment CRM**. The authoritative source is the Structurizr DSL workspace at `docs/architecture.dsl`. The diagrams below are Mermaid renderings auto-exported from the same DSL via the Structurizr MCP toolchain (validated and exported on 2026-05-03).
+
+## Scope
+
+- `frontend/` — Next.js 16 + React 19 application that also owns the lightweight BFF (Route Handlers, Server Actions, server-only modules, cookie-based session). Same-origin proxy to the backend lives at `/api/backend/[...path]`.
+- `gateway/` — Go API Gateway. Skeleton present in the repo; **not yet in the browser path**. Planned to become the edge in front of the backend, owning routing, CORS, auth boundary, rate limiting, correlation IDs, logging and health checks.
+- `backend/` — .NET 10 ASP.NET Core API. Domain logic, EF Core 10 with Npgsql, JWT issuance, audit, idempotency, integrations.
+- PostgreSQL — primary persistence.
+- Redis — planned cache; package referenced but not connected at runtime.
+- External systems used in the live path: Santander Cobrança API, Azure Blob Storage, Azure OpenAI, Resend, Azure Application Insights, Sentry.
+
+## System Context
+
+Top-level view of who uses Payment CRM and what it integrates with.
+
+```mermaid
+graph LR
+  linkStyle default fill:#ffffff
+
+  subgraph diagram ["System Context View: Payment CRM"]
+    style diagram fill:#ffffff,stroke:#ffffff
+
+    1["<div style='font-weight: bold'>Vendedor / Consultor</div><div style='font-size: 70%; margin-top: 0px'>[Person]</div><div style='font-size: 80%; margin-top:10px'>Operates leads, contratos,<br />boletos and follows up with<br />clients.</div>"]
+    style 1 fill:#08427b,stroke:#052e56,color:#ffffff
+    10["<div style='font-weight: bold'>Payment CRM</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Lead-to-cash CRM with<br />billing, document management<br />and RAG assistant.</div>"]
+    style 10 fill:#1168bd,stroke:#0b4884,color:#ffffff
+    2["<div style='font-weight: bold'>Administrador</div><div style='font-size: 70%; margin-top: 0px'>[Person]</div><div style='font-size: 80%; margin-top:10px'>Manages users, groups,<br />permissions, audit logs.</div>"]
+    style 2 fill:#08427b,stroke:#052e56,color:#ffffff
+    3["<div style='font-weight: bold'>Cliente Portal</div><div style='font-size: 70%; margin-top: 0px'>[Person]</div><div style='font-size: 80%; margin-top:10px'>Reviews own boletos,<br />contratos and documents<br />through the Portal.</div>"]
+    style 3 fill:#08427b,stroke:#052e56,color:#ffffff
+    4["<div style='font-weight: bold'>Santander Cobranca API</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Issues boletos and Pix<br />charges, returns status<br />callbacks.</div>"]
+    style 4 fill:#999999,stroke:#6b6b6b,color:#ffffff
+    5["<div style='font-weight: bold'>Azure Blob Storage</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Stores contract documents and<br />generated PDFs.</div>"]
+    style 5 fill:#999999,stroke:#6b6b6b,color:#ffffff
+    6["<div style='font-weight: bold'>Azure OpenAI</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Hosts gpt-4o for RAG-driven<br />assistant queries.</div>"]
+    style 6 fill:#999999,stroke:#6b6b6b,color:#ffffff
+    7["<div style='font-weight: bold'>Resend</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Transactional email delivery<br />(boletos, password reset,<br />notifications).</div>"]
+    style 7 fill:#999999,stroke:#6b6b6b,color:#ffffff
+    8["<div style='font-weight: bold'>Azure Application Insights</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Receives backend traces,<br />metrics and structured logs.</div>"]
+    style 8 fill:#999999,stroke:#6b6b6b,color:#ffffff
+    9["<div style='font-weight: bold'>Sentry</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Captures frontend client and<br />server errors.</div>"]
+    style 9 fill:#999999,stroke:#6b6b6b,color:#ffffff
+
+    1-. "<div>Operates the CRM in the<br />browser</div><div style='font-size: 70%'>[HTTPS]</div>" .->10
+    2-. "<div>Manages users, groups and<br />audit</div><div style='font-size: 70%'>[HTTPS]</div>" .->10
+    3-. "<div>Accesses Portal Cliente</div><div style='font-size: 70%'>[HTTPS]</div>" .->10
+    10-. "<div>Reports client and server<br />errors</div><div style='font-size: 70%'>[HTTPS]</div>" .->9
+    10-. "<div>Issues boletos and Pix<br />charges</div><div style='font-size: 70%'>[HTTPS / mTLS]</div>" .->4
+    10-. "<div>Uploads contract PDFs and<br />documents</div><div style='font-size: 70%'>[HTTPS]</div>" .->5
+    10-. "<div>Sends RAG-enriched prompts<br />and reads completions</div><div style='font-size: 70%'>[HTTPS]</div>" .->6
+    10-. "<div>Sends transactional email</div><div style='font-size: 70%'>[HTTPS]</div>" .->7
+    10-. "<div>Streams traces, metrics and<br />logs</div><div style='font-size: 70%'>[HTTPS]</div>" .->8
+
+  end
+```
+
+## Containers
+
+Internal containers of Payment CRM and how they connect to people, to each other and to external systems. The `API Gateway` and `Redis Cache` containers are styled as **Planned** — present in the model and in the repo (skeleton/csproj reference) but not yet in the live request path.
+
+```mermaid
+graph LR
+  linkStyle default fill:#ffffff
+
+  subgraph diagram ["Container View: Payment CRM"]
+    style diagram fill:#ffffff,stroke:#ffffff
+
+    1["<div style='font-weight: bold'>Vendedor / Consultor</div><div style='font-size: 70%; margin-top: 0px'>[Person]</div><div style='font-size: 80%; margin-top:10px'>Operates leads, contratos,<br />boletos and follows up with<br />clients.</div>"]
+    style 1 fill:#08427b,stroke:#052e56,color:#ffffff
+    2["<div style='font-weight: bold'>Administrador</div><div style='font-size: 70%; margin-top: 0px'>[Person]</div><div style='font-size: 80%; margin-top:10px'>Manages users, groups,<br />permissions, audit logs.</div>"]
+    style 2 fill:#08427b,stroke:#052e56,color:#ffffff
+    3["<div style='font-weight: bold'>Cliente Portal</div><div style='font-size: 70%; margin-top: 0px'>[Person]</div><div style='font-size: 80%; margin-top:10px'>Reviews own boletos,<br />contratos and documents<br />through the Portal.</div>"]
+    style 3 fill:#08427b,stroke:#052e56,color:#ffffff
+    4["<div style='font-weight: bold'>Santander Cobranca API</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Issues boletos and Pix<br />charges, returns status<br />callbacks.</div>"]
+    style 4 fill:#999999,stroke:#6b6b6b,color:#ffffff
+    5["<div style='font-weight: bold'>Azure Blob Storage</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Stores contract documents and<br />generated PDFs.</div>"]
+    style 5 fill:#999999,stroke:#6b6b6b,color:#ffffff
+    6["<div style='font-weight: bold'>Azure OpenAI</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Hosts gpt-4o for RAG-driven<br />assistant queries.</div>"]
+    style 6 fill:#999999,stroke:#6b6b6b,color:#ffffff
+    7["<div style='font-weight: bold'>Resend</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Transactional email delivery<br />(boletos, password reset,<br />notifications).</div>"]
+    style 7 fill:#999999,stroke:#6b6b6b,color:#ffffff
+    8["<div style='font-weight: bold'>Azure Application Insights</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Receives backend traces,<br />metrics and structured logs.</div>"]
+    style 8 fill:#999999,stroke:#6b6b6b,color:#ffffff
+    9["<div style='font-weight: bold'>Sentry</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Captures frontend client and<br />server errors.</div>"]
+    style 9 fill:#999999,stroke:#6b6b6b,color:#ffffff
+
+    subgraph 10 ["Payment CRM"]
+      style 10 fill:#ffffff,stroke:#0b4884,color:#0b4884
+
+      11["<div style='font-weight: bold'>Next.js Frontend and BFF</div><div style='font-size: 70%; margin-top: 0px'>[Container: Next.js 16 / React 19 / TypeScript]</div><div style='font-size: 80%; margin-top:10px'>UI plus Route Handlers,<br />Server Actions and<br />server-only modules. Owns the<br />session cookie and the<br />same-origin /api/backend<br />proxy to the backend.</div>"]
+      style 11 fill:#438dd5,stroke:#2e6295,color:#ffffff
+      12["<div style='font-weight: bold'>API Gateway</div><div style='font-size: 70%; margin-top: 0px'>[Container: Go 1.22 / net/http]</div><div style='font-size: 80%; margin-top:10px'>Thin Go edge: routing, CORS,<br />auth boundary, rate limiting,<br />correlation IDs, logging,<br />health checks. Skeleton in<br />gateway/; not yet in the<br />browser path.</div>"]
+      style 12 fill:#b07b00,stroke:#7b5600,color:#ffffff
+      13["<div style='font-weight: bold'>Backend API</div><div style='font-size: 70%; margin-top: 0px'>[Container: .NET 10 / ASP.NET Core / EF Core 10 / Npgsql]</div><div style='font-size: 80%; margin-top:10px'>Domain logic, EF Core<br />persistence, JWT issuance,<br />business workflows and<br />external integrations.</div>"]
+      style 13 fill:#438dd5,stroke:#2e6295,color:#ffffff
+      14[("<div style='font-weight: bold'>PostgreSQL</div><div style='font-size: 70%; margin-top: 0px'>[Container: PostgreSQL 16]</div><div style='font-size: 80%; margin-top:10px'>Primary persistence for<br />clientes, contratos, boletos,<br />audit logs, idempotency keys,<br />sessoes ativas and lead<br />pipeline.</div>")]
+      style 14 fill:#2e7d32,stroke:#205723,color:#ffffff
+      15["<div style='font-weight: bold'>Redis Cache</div><div style='font-size: 70%; margin-top: 0px'>[Container: Redis 7]</div><div style='font-size: 80%; margin-top:10px'>Planned read-through cache<br />for sessions and frequent<br />reads. Package referenced in<br />csproj, not wired at runtime.</div>"]
+      style 15 fill:#b07b00,stroke:#7b5600,color:#ffffff
+    end
+
+    1-. "<div>Operates the CRM in the<br />browser</div><div style='font-size: 70%'>[HTTPS]</div>" .->11
+    2-. "<div>Manages users, groups and<br />audit</div><div style='font-size: 70%'>[HTTPS]</div>" .->11
+    3-. "<div>Accesses Portal Cliente</div><div style='font-size: 70%'>[HTTPS]</div>" .->11
+    11-. "<div>Server-side fetch via<br />/api/backend/[...path]<br />(same-origin proxy)</div><div style='font-size: 70%'>[HTTPS / JSON]</div>" .->13
+    11-. "<div>Reports client and server<br />errors</div><div style='font-size: 70%'>[HTTPS]</div>" .->9
+    11-. "<div>Future: routes through edge<br />instead of calling backend<br />directly</div><div style='font-size: 70%'>[HTTPS]</div>" .->12
+    12-. "<div>Reverse-proxies validated<br />requests after JWT verify</div><div style='font-size: 70%'>[HTTPS / JSON]</div>" .->13
+    13-. "<div>Reads and writes via Npgsql<br />and EF Core</div><div style='font-size: 70%'>[TCP 5432]</div>" .->14
+    13-. "<div>Planned cache reads and<br />writes</div><div style='font-size: 70%'>[TCP 6379]</div>" .->15
+    13-. "<div>Issues boletos and Pix<br />charges</div><div style='font-size: 70%'>[HTTPS / mTLS]</div>" .->4
+    13-. "<div>Uploads contract PDFs and<br />documents</div><div style='font-size: 70%'>[HTTPS]</div>" .->5
+    13-. "<div>Sends RAG-enriched prompts<br />and reads completions</div><div style='font-size: 70%'>[HTTPS]</div>" .->6
+    13-. "<div>Sends transactional email</div><div style='font-size: 70%'>[HTTPS]</div>" .->7
+    13-. "<div>Streams traces, metrics and<br />logs</div><div style='font-size: 70%'>[HTTPS]</div>" .->8
+
+  end
+```
+
+## Maintenance
+
+- The DSL at `docs/architecture.dsl` is the source of truth for the C4 model. Edit it first, then regenerate the Mermaid blocks above via the Structurizr MCP (`validate` then `export-mermaid` per `viewKey`).
+- View keys: `SystemContext`, `Containers`.
+- Architectural decisions live under `docs/adr/`. Detailed flows and rationale live in `docs/architecture/target-architecture.md`.

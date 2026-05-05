@@ -49,7 +49,7 @@ namespace CrmArrighi.Models
         public int? EnderecoId { get; set; }
         public Endereco? Endereco { get; set; }
 
-        public DateTime DataCadastro { get; set; } = DateTime.Now;
+        public DateTime DataCadastro { get; set; } = DateTime.UtcNow;
         public DateTime? DataAtualizacao { get; set; }
     }
 }

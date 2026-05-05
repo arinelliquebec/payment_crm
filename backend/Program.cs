@@ -13,6 +13,9 @@ using Microsoft.ApplicationInsights.Extensibility;
 using CrmArrighi.HealthChecks;
 using Npgsql;
 
+// Variáveis em backend/.env são visíveis aqui (dotnet não carrega .env sozinho).
+TryLoadDotEnvIfPresent();
+
 var builder = WebApplication.CreateBuilder(args);
 
 // ✅ Em desenvolvimento, carregue também o appsettings.Production.json para usar as
@@ -342,6 +345,74 @@ using (var scope = app.Services.CreateScope())
 
 app.Run();
 
+/// <summary>
+/// Carrega KEY=VALUE de um .env local sem dependências externas.
+/// Não sobrescreve variáveis de ambiente já definidas. Primeiro ficheiro encontrado ganha.
+/// </summary>
+static void TryLoadDotEnvIfPresent()
+{
+    foreach (var dir in DotEnvSearchDirectories())
+    {
+        var path = Path.Combine(dir, ".env");
+        if (!File.Exists(path))
+            continue;
+
+        foreach (var raw in File.ReadAllLines(path))
+        {
+            var line = raw.TrimStart('\uFEFF').Trim();
+            if (line.Length == 0 || line[0] == '#')
+                continue;
+
+            // Suporta ficheiros .env no estilo POSIX: "export VAR=valor"
+            const string exportPrefix = "export ";
+            if (line.StartsWith(exportPrefix, StringComparison.OrdinalIgnoreCase))
+                line = line[exportPrefix.Length..].TrimStart();
+
+            var eq = line.IndexOf('=');
+            if (eq < 1)
+                continue;
+
+            var key = line[..eq].Trim();
+            if (key.Length == 0)
+                continue;
+
+            var value = line[(eq + 1)..].Trim();
+            if ((value.StartsWith('"') && value.EndsWith('"')) ||
+                (value.StartsWith('\'') && value.EndsWith('\'')))
+            {
+                value = value[1..^1];
+            }
+
+            if (Environment.GetEnvironmentVariable(key) is null)
+                Environment.SetEnvironmentVariable(key, value);
+        }
+
+        Console.WriteLine($"📄 Variáveis carregadas de: {path}");
+        return;
+    }
+}
+
+static IEnumerable<string> DotEnvSearchDirectories()
+{
+    yield return Directory.GetCurrentDirectory();
+    var nestedBackend = Path.Combine(Directory.GetCurrentDirectory(), "backend");
+    if (Directory.Exists(nestedBackend))
+        yield return nestedBackend;
+}
+
+/// <summary>Detecta PGPASSWORD copiado de um .env pensado para bash/zsh (substituição $(...) não é executada pelo .NET).</summary>
+static bool LooksLikeUnexpandedShellPassword(string? password)
+{
+    if (string.IsNullOrWhiteSpace(password))
+        return false;
+    var p = password.Trim();
+    if (p.Contains("$(", StringComparison.Ordinal))
+        return true;
+    if (p.Contains("${", StringComparison.Ordinal))
+        return true;
+    return p.Length > 2 && p[0] == '`' && p[^1] == '`';
+}
+
 static string GetPostgreSqlConnectionString(IConfiguration configuration)
 {
     var configuredConnectionString = configuration.GetConnectionString("DefaultConnection");
@@ -362,7 +433,23 @@ static string GetPostgreSqlConnectionString(IConfiguration configuration)
         string.IsNullOrWhiteSpace(database))
     {
         throw new InvalidOperationException(
-            "Configure PGHOST, PGUSER e PGDATABASE para conectar ao PostgreSQL.");
+            "Ligação PostgreSQL em falta. Use uma destas opções: " +
+            "(1) ConnectionStrings:DefaultConnection no formato Npgsql (Host=...;Username=...;Password=...;Database=...;Ssl Mode=Require) — ficheiros appsettings, user-secrets ou env ConnectionStrings__DefaultConnection; " +
+            "(2) Variáveis PGHOST, PGUSER, PGDATABASE e PGPASSWORD (e opcionalmente PGPORT); " +
+            "(3) Ficheiro backend/.env com as mesmas chaves (carregado automaticamente ao arrancar se existir). " +
+            "Nota: cadeias com Server= ou Data Source= são ignoradas (legado SQL Server).");
+    }
+
+    if (LooksLikeUnexpandedShellPassword(password))
+    {
+        throw new InvalidOperationException(
+            "PGPASSWORD contém substituição de shell (ex.: $(az ...)) — o ficheiro .env lido pelo .NET não executa o bash. " +
+            "Opções: (1) No terminal, exporte o token antes de arrancar: " +
+            "export PGPASSWORD=\"$(az account get-access-token --resource-type oss-rdbms --query accessToken -o tsv)\" && dotnet run " +
+            "(ajuste os parâmetros do az ao seu tenant); " +
+            "(2) Ou coloque em backend/.env o JWT em texto puro (renova tipicamente em ~1 h); " +
+            "(3) Ou use password estática de utilizador PostgreSQL se aplicável. " +
+            "Enquanto PGDATABASE for a base administrativa 'postgres', confirme se pretende a base da aplicação (ex.: payment_crm_demo).");
     }
 
     var builder = new NpgsqlConnectionStringBuilder

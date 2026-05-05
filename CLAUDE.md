@@ -35,3 +35,9 @@ Before major changes:
 5. Preserve behavior unless explicitly asked.
 
 Ask before destructive database commands, auth changes, public API changes, proto field changes, broad refactors, or adding major dependencies.
+
+## Documentação de arquitetura
+- Sempre que adicionar um novo serviço, container ou integração externa: rodar /arch
+- PRs com mudanças em src/services/ ou src/integrations/ DEVEM incluir atualização do architecture.dsl
+- Usar Structurizr MCP para validar DSL antes de commitar — nunca commitar DSL inválido
+- Exportar Mermaid atualizado junto com o DSL: docs/architecture.md

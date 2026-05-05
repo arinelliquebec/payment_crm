@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 
 export interface Notificacao {
   id: number;
@@ -17,32 +18,15 @@ export interface Notificacao {
   nomeCliente: string | null;
 }
 
-// Helper para verificar se o usuário está autenticado
-const isUserAuthenticated = (): boolean => {
-  if (typeof window === "undefined") return false;
-  const isAuth = localStorage.getItem("isAuthenticated") === "true";
-  const user = localStorage.getItem("user");
-  if (!isAuth || !user) return false;
-
-  try {
-    const userData = JSON.parse(user);
-    const usuarioId =
-      userData.UsuarioId || userData.usuarioId || userData.id || userData.Id;
-    return !!usuarioId;
-  } catch {
-    return false;
-  }
-};
-
 export function useNotificacoes(autoRefresh = true) {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [notificacoes, setNotificacoes] = useState<Notificacao[]>([]);
   const [countNaoLidas, setCountNaoLidas] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchNotificacoes = useCallback(async (apenasNaoLidas = false) => {
-    // Não fazer requisição se o usuário não estiver autenticado
-    if (!isUserAuthenticated()) {
+    if (!isAuthenticated) {
       setLoading(false);
       setNotificacoes([]);
       return;
@@ -65,11 +49,10 @@ export function useNotificacoes(autoRefresh = true) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAuthenticated]);
 
   const fetchCountNaoLidas = useCallback(async () => {
-    // Não fazer requisição se o usuário não estiver autenticado
-    if (!isUserAuthenticated()) {
+    if (!isAuthenticated) {
       setCountNaoLidas(0);
       return;
     }
@@ -82,7 +65,7 @@ export function useNotificacoes(autoRefresh = true) {
     } catch (err) {
       console.error("Erro ao buscar contagem de notificações:", err);
     }
-  }, []);
+  }, [isAuthenticated]);
 
   const marcarComoLida = useCallback(async (id: number) => {
     try {
@@ -119,13 +102,26 @@ export function useNotificacoes(autoRefresh = true) {
   }, []);
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!isAuthenticated) {
+      setLoading(false);
+      setNotificacoes([]);
+      setCountNaoLidas(0);
+      setError(null);
+      return;
+    }
     fetchNotificacoes();
     fetchCountNaoLidas();
-  }, [fetchNotificacoes, fetchCountNaoLidas]);
+  }, [
+    authLoading,
+    isAuthenticated,
+    fetchNotificacoes,
+    fetchCountNaoLidas,
+  ]);
 
   // Auto-refresh a cada 30 segundos
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoRefresh || authLoading || !isAuthenticated) return;
 
     const interval = setInterval(() => {
       fetchCountNaoLidas();
@@ -136,7 +132,14 @@ export function useNotificacoes(autoRefresh = true) {
     }, 30000); // 30 segundos
 
     return () => clearInterval(interval);
-  }, [autoRefresh, fetchCountNaoLidas, fetchNotificacoes, notificacoes.length]);
+  }, [
+    autoRefresh,
+    authLoading,
+    isAuthenticated,
+    fetchCountNaoLidas,
+    fetchNotificacoes,
+    notificacoes.length,
+  ]);
 
   return {
     notificacoes,

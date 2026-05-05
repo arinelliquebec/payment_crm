@@ -1,3 +1,5 @@
+import { withBackendApiPath } from "./src/lib/server-api-url";
+
 // Configuração de ambiente para o frontend
 export const config = {
   // Ambiente atual
@@ -20,11 +22,11 @@ export const getApiUrl = (): string => {
   if (typeof window !== "undefined") {
     return "/api/backend";
   }
-  return (
+  const raw =
     process.env.BACKEND_URL ||
     process.env.NEXT_PUBLIC_API_URL ||
-    "http://localhost:5101/api"
-  );
+    "http://localhost:5101";
+  return withBackendApiPath(raw);
 };
 
 // Função para verificar se está em desenvolvimento
